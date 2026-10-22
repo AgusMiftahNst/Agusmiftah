@@ -1,0 +1,6 @@
+{
+  "name": "Agus Miftah - AI Pribadi & Health Tracker",
+  "description": "Aplikasi asisten AI pribadi ramah dari Agus Miftah untuk memantau kesehatan (tensi, asam urat, kolesterol, gula darah), kebiasaan harian, dan keuangan ringkas yang tersinkronisasi otomatis di HP dan laptop.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
