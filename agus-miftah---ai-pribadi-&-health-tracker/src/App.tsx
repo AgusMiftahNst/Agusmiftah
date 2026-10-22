@@ -14,6 +14,7 @@ import { ActivitiesView } from './components/ActivitiesView';
 import { AIChatView } from './components/AIChatView';
 import { HealthCheckModal } from './components/HealthCheckModal';
 import { SyncModal } from './components/SyncModal';
+import { ConfirmDeleteModal } from './components/ConfirmDeleteModal';
 import {
   AppState,
   ActivityItem,
@@ -27,7 +28,9 @@ import {
   loadAppState,
   saveAppState,
   normalizeAppState,
-  getTodayDateString
+  getTodayDateString,
+  formatDateIndonesian,
+  formatRupiah
 } from './utils/storage';
 import {
   fetchServerStateDetailed,
@@ -41,12 +44,22 @@ import { generateContextualJarvisReply } from './utils/jarvisBrain';
 import { sound } from './utils/audio';
 import { sendLocalNotification } from './utils/notifications';
 
+interface DeleteConfirmTarget {
+  type: 'activity' | 'healthCheck' | 'transaction' | 'reminder';
+  id: string;
+  title: string;
+  itemName: string;
+  itemDetails?: string;
+  categoryLabel?: string;
+}
+
 export default function App() {
   const [appState, setAppState] = useState<AppState>(() => loadAppState());
   const [currentTab, setCurrentTab] = useState<MainTabType>('home');
   const [syncStatus, setSyncStatus] = useState<SyncStateStatus>('synced');
   const [isHealthCheckOpen, setIsHealthCheckOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<DeleteConfirmTarget | null>(null);
   const [syncToast, setSyncToast] = useState<string | null>(null);
   const [lastNotifiedTime, setLastNotifiedTime] = useState<string>('');
 
@@ -450,6 +463,79 @@ export default function App() {
     }));
   };
 
+  // Safe Deletion Handlers with Confirmation Modal
+  const requestDeleteActivity = (id: string) => {
+    const act = (appState.activities || []).find((a) => a.id === id);
+    setDeleteConfirmTarget({
+      type: 'activity',
+      id,
+      title: 'Hapus Kegiatan?',
+      itemName: act ? act.title : 'Kegiatan ini',
+      itemDetails: act?.dueDate
+        ? `Tenggat: ${formatDateIndonesian(act.dueDate)}${act.dueTime ? ` · ${act.dueTime}` : ''}`
+        : undefined,
+      categoryLabel: act?.category ? `Kategori: ${act.category}` : undefined
+    });
+  };
+
+  const requestDeleteHealthCheck = (id: string) => {
+    const hc = (appState.healthChecks || []).find((h) => h.id === id);
+    setDeleteConfirmTarget({
+      type: 'healthCheck',
+      id,
+      title: 'Hapus Catatan Skrining Kesehatan?',
+      itemName: hc ? `Pemeriksaan ${formatDateIndonesian(hc.date)}` : 'Catatan pemeriksaan',
+      itemDetails: hc
+        ? `Tensi ${hc.systolic}/${hc.diastolic} mmHg · Asam Urat ${hc.uricAcid ?? '-'} · Gula ${hc.bloodSugar ?? '-'}`
+        : undefined,
+      categoryLabel: 'Catatan Kesehatan'
+    });
+  };
+
+  const requestDeleteTransaction = (id: string) => {
+    const tx = (appState.transactions || []).find((t) => t.id === id);
+    setDeleteConfirmTarget({
+      type: 'transaction',
+      id,
+      title: 'Hapus Catatan Transaksi?',
+      itemName: tx ? tx.title : 'Catatan transaksi',
+      itemDetails: tx
+        ? `${tx.type === 'pemasukan' ? 'Pemasukan (+)' : 'Pengeluaran (-)'} ${formatRupiah(tx.amount)} · ${formatDateIndonesian(tx.date)}`
+        : undefined,
+      categoryLabel: tx?.category ? `Kategori: ${tx.category}` : undefined
+    });
+  };
+
+  const requestDeleteReminder = (id: string) => {
+    const rem = (appState.reminders || []).find((r) => r.id === id);
+    setDeleteConfirmTarget({
+      type: 'reminder',
+      id,
+      title: 'Hapus Pengingat Rutin?',
+      itemName: rem ? rem.title : 'Pengingat rutin',
+      itemDetails: rem ? `Pukul ${rem.time} WIB ${rem.note ? `· ${rem.note}` : ''}` : undefined,
+      categoryLabel: 'Pengingat Rutin'
+    });
+  };
+
+  const handleConfirmDelete = () => {
+    if (!deleteConfirmTarget) return;
+    const { type, id } = deleteConfirmTarget;
+    if (type === 'activity') {
+      handleDeleteActivity(id);
+    } else if (type === 'healthCheck') {
+      handleDeleteHealthCheck(id);
+    } else if (type === 'transaction') {
+      handleDeleteTransaction(id);
+    } else if (type === 'reminder') {
+      handleDeleteReminder(id);
+    }
+    setDeleteConfirmTarget(null);
+    if (appState.settings.soundEnabled) {
+      sound.playBreathCue(true);
+    }
+  };
+
   // AI Chat handler
   const handleSendMessage = async (userText: string) => {
     const userMsg: ChatMessage = {
@@ -600,7 +686,7 @@ export default function App() {
             activities={appState.activities || []}
             onToggleActivity={handleToggleActivity}
             onAddActivity={handleAddActivity}
-            onDeleteActivity={handleDeleteActivity}
+            onDeleteActivity={requestDeleteActivity}
             onNavigateToReminders={() => setCurrentTab('reminders')}
             soundEnabled={appState.settings.soundEnabled}
           />
@@ -614,7 +700,7 @@ export default function App() {
             onToggleHabit={handleToggleHabit}
             onIncrementHabit={handleIncrementHabit}
             onOpenHealthCheckModal={() => setIsHealthCheckOpen(true)}
-            onDeleteHealthCheck={handleDeleteHealthCheck}
+            onDeleteHealthCheck={requestDeleteHealthCheck}
             onOpenAIChat={() => setCurrentTab('ai')}
             soundEnabled={appState.settings.soundEnabled}
           />
@@ -625,7 +711,7 @@ export default function App() {
             transactions={appState.transactions}
             todayDate={todayDate}
             onAddTransaction={handleAddTransaction}
-            onDeleteTransaction={handleDeleteTransaction}
+            onDeleteTransaction={requestDeleteTransaction}
             soundEnabled={appState.settings.soundEnabled}
           />
         )}
@@ -635,7 +721,7 @@ export default function App() {
             reminders={appState.reminders}
             onAddReminder={handleAddReminder}
             onToggleReminder={handleToggleReminder}
-            onDeleteReminder={handleDeleteReminder}
+            onDeleteReminder={requestDeleteReminder}
             soundEnabled={appState.settings.soundEnabled}
           />
         )}
@@ -652,6 +738,17 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Universal Delete Confirmation Modal */}
+      <ConfirmDeleteModal
+        isOpen={!!deleteConfirmTarget}
+        title={deleteConfirmTarget?.title || 'Konfirmasi Hapus'}
+        itemName={deleteConfirmTarget?.itemName || ''}
+        itemDetails={deleteConfirmTarget?.itemDetails}
+        categoryLabel={deleteConfirmTarget?.categoryLabel}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteConfirmTarget(null)}
+      />
 
       {/* Sync HP & Laptop Modal */}
       <SyncModal
