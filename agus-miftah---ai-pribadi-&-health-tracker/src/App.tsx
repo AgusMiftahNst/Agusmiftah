@@ -34,6 +34,7 @@ import {
   subscribeToServerState,
   SyncStateStatus
 } from './utils/sync';
+import { generateContextualJarvisReply } from './utils/jarvisBrain';
 import { sound } from './utils/audio';
 import { sendLocalNotification } from './utils/notifications';
 
@@ -372,64 +373,75 @@ export default function App() {
       chatMessages: newMessages
     }));
 
-    try {
-      const userContext = {
-        userName: appState.settings.userName,
-        pendingActivities: (appState.activities || [])
-          .filter((a) => !a.completed)
-          .map((a) => ({
-            title: a.title,
-            deadline: `${a.dueDate}${a.dueTime ? ' ' + a.dueTime : ''}`,
-            category: a.category,
-            priority: a.priority
-          })),
-        latestHealthCheck: appState.healthChecks[0],
-        todayHabits: appState.habits.map((h) => ({
-          title: h.title,
-          progress: `${h.history[todayDate] || 0}/${h.targetCount} ${h.unit}`
+    const userContext = {
+      userName: appState.settings.userName,
+      pendingActivities: (appState.activities || [])
+        .filter((a) => !a.completed)
+        .map((a) => ({
+          title: a.title,
+          deadline: `${a.dueDate}${a.dueTime ? ' ' + a.dueTime : ''}`,
+          category: a.category,
+          priority: a.priority
         })),
-        recentTransactions: appState.transactions.slice(0, 5)
-      };
+      latestHealthCheck: appState.healthChecks[0],
+      todayHabits: appState.habits.map((h) => ({
+        title: h.title,
+        progress: `${h.history[todayDate] || 0}/${h.targetCount} ${h.unit}`
+      })),
+      recentTransactions: appState.transactions.slice(0, 5)
+    };
+
+    let replyText: string | null = null;
+
+    try {
+      const controller = new AbortController();
+      const timeoutTimer = window.setTimeout(() => controller.abort(), 5000);
 
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         body: JSON.stringify({
           messages: newMessages.map((m) => ({ role: m.role, text: m.text })),
           userContext
-        })
+        }),
+        signal: controller.signal
       });
 
-      if (res.ok) {
+      window.clearTimeout(timeoutTimer);
+
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
-        const modelMsg: ChatMessage = {
-          id: `mod-${Date.now()}`,
-          role: 'model',
-          text: data.reply,
-          timestamp: Date.now()
-        };
-        updateAndSyncState((prev) => ({
-          ...prev,
-          chatMessages: [...prev.chatMessages, modelMsg]
-        }));
-        if (appState.settings.soundEnabled) {
-          sound.playBreathCue(false);
+        if (data && typeof data.reply === 'string' && data.reply.trim()) {
+          replyText = data.reply;
         }
-      } else {
-        throw new Error(`API error: ${res.status}`);
       }
-    } catch (err) {
-      console.error('Failed to get AI reply:', err);
-      const errorMsg: ChatMessage = {
-        id: `mod-${Date.now()}`,
-        role: 'model',
-        text: 'Maaf, terjadi gangguan jaringan saat menghubungi AI Agus Miftah. Coba lagi sebentar ya!',
-        timestamp: Date.now()
-      };
-      updateAndSyncState((prev) => ({
-        ...prev,
-        chatMessages: [...prev.chatMessages, errorMsg]
-      }));
+    } catch {
+      // Offline, network drop, timeout, or HTML SPA fallback on static host
+    }
+
+    // Seamless instant fallback to built-in intelligent JARVIS brain
+    if (!replyText || !replyText.trim()) {
+      replyText = generateContextualJarvisReply(userText, userContext);
+    }
+
+    const modelMsg: ChatMessage = {
+      id: `mod-${Date.now()}`,
+      role: 'model',
+      text: replyText,
+      timestamp: Date.now()
+    };
+
+    updateAndSyncState((prev) => ({
+      ...prev,
+      chatMessages: [...prev.chatMessages, modelMsg]
+    }));
+
+    if (appState.settings.soundEnabled) {
+      sound.playBreathCue(false);
     }
   };
 
