@@ -9,7 +9,6 @@ import {
   Sparkles,
   Wallet,
   Clock,
-  Bot,
   MessageCircle,
   Flame,
   CheckSquare,
@@ -19,6 +18,7 @@ import {
 import { HabitItem, HealthCheckRecord, TransactionLog, ReminderItem, ActivityItem } from '../types';
 import { formatRupiah, formatDateIndonesian, getActivityUrgency } from '../utils/storage';
 import { sound } from '../utils/audio';
+import { JarvisLogo } from './JarvisLogo';
 
 interface HomeViewProps {
   todayDate: string;
@@ -82,35 +82,33 @@ export function HomeView({
     .find((r) => r.mins >= currentMinutes);
 
   const waterHabit = habits.find((h) => h.id === 'h-1');
-  const currentWater = waterHabit?.history[todayDate] || 0;
+  const currentWater = (waterHabit?.history && waterHabit.history[todayDate]) || 0;
 
   return (
     <div className="space-y-4 pb-4">
-      {/* 1. Friendly AI Greeting Card */}
-      <div className="p-4 bg-linear-to-r from-rose-500/10 via-indigo-500/10 to-emerald-500/10 dark:from-rose-950/40 dark:via-indigo-950/40 dark:to-emerald-950/40 border border-rose-200/60 dark:border-rose-900/40 rounded-2xl flex items-start gap-3">
-        <div className="w-10 h-10 rounded-full bg-linear-to-tr from-rose-500 to-indigo-600 flex items-center justify-center text-white shrink-0 mt-0.5 shadow-xs">
-          <Bot className="w-5 h-5" />
-        </div>
+      {/* 1. Futuristic JARVIS Greeting Card */}
+      <div className="p-4 bg-linear-to-r from-cyan-500/10 via-indigo-500/10 to-amber-500/10 dark:from-cyan-950/40 dark:via-indigo-950/40 dark:to-amber-950/40 border border-cyan-200/60 dark:border-cyan-800/50 rounded-2xl flex items-start gap-3">
+        <JarvisLogo size="md" variant="hybrid" animated={true} />
         <div className="flex-1 min-w-0">
-          <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-            Hai Agus!
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+          <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5 font-mono tracking-wide">
+            JARVIS ONLINE
+            <Sparkles className="w-3.5 h-3.5 text-cyan-500" />
           </h2>
           <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-snug">
             {pendingActivities.length > 0 ? (
               <span>
-                Kamu ada <strong>{pendingActivities.length} kegiatan</strong> yang belum selesai. Semangat, yuk selesaikan satu per satu!
+                Halo Agus, ada <strong>{pendingActivities.length} kegiatan</strong> dengan deadline aktif. Sistem siap membantu Anda menuntaskannya!
               </span>
             ) : (
-              <span>Semua kegiatan selesai! Jangan lupa istirahat yang cukup dan minum air putih ya.</span>
+              <span>Halo Agus! Semua parameter dan tugas harian aman terkendali. Jangan lupa hidrasi air putih ya.</span>
             )}
           </p>
           <button
             onClick={() => onNavigateTab('ai')}
-            className="mt-2.5 inline-flex items-center gap-1 px-3 py-1 text-[11px] font-semibold text-white bg-rose-600 hover:bg-rose-700 active:scale-98 rounded-lg shadow-xs transition-all"
+            className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 active:scale-98 rounded-lg shadow-xs shadow-cyan-500/20 transition-all font-mono"
           >
             <MessageCircle className="w-3.5 h-3.5" />
-            Ngobrol dengan AI Agus
+            Tanya JARVIS
           </button>
         </div>
       </div>
@@ -277,7 +275,7 @@ export function HomeView({
             Kebiasaan Sehat Hari Ini
           </h3>
           <span className="text-[11px] font-mono text-slate-400">
-            {habits.filter((h) => (h.history[todayDate] || 0) >= h.targetCount).length}/{habits.length} Selesai
+            {habits.filter((h) => ((h.history && h.history[todayDate]) || 0) >= (h.targetCount || 1)).length}/{habits.length} Selesai
           </span>
         </div>
 
@@ -293,7 +291,7 @@ export function HomeView({
                   Air Putih Hari Ini
                 </span>
                 <span className="text-[11px] font-mono text-cyan-700 dark:text-cyan-300 font-bold">
-                  {currentWater}/{waterHabit.targetCount} Gelas (~{(currentWater * 0.25).toFixed(1)}L)
+                  {currentWater}/{waterHabit.targetCount || 8} Gelas (~{(currentWater * 0.25).toFixed(1)}L)
                 </span>
               </div>
             </div>
@@ -324,8 +322,8 @@ export function HomeView({
           {habits
             .filter((h) => h.id !== 'h-1')
             .map((habit) => {
-              const current = habit.history[todayDate] || 0;
-              const isDone = current >= habit.targetCount;
+              const current = (habit.history && habit.history[todayDate]) || 0;
+              const isDone = current >= (habit.targetCount || 1);
 
               return (
                 <div
