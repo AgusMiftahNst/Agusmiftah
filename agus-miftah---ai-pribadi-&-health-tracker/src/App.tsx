@@ -127,35 +127,29 @@ export default function App() {
           return true;
         }
 
-        if (res.state && (typeof res.state.serverUpdatedAt === 'number' || typeof res.state.syncRevision === 'number')) {
+        if (res.state) {
+          const normalized = normalizeAppState(res.state);
           const localTime = stateRef.current.serverUpdatedAt || 0;
+          const serverTime = normalized.serverUpdatedAt || 0;
           const localRevision = stateRef.current.syncRevision || 0;
-          const serverRevision = res.state.syncRevision || 0;
-          const serverTime = res.state.serverUpdatedAt || 0;
+          const serverRevision = normalized.syncRevision || 0;
 
-          // Check if server has activities or checks that local doesn't have completed
-          const serverHasCompletedActs = (res.state.activities || []).some((a) => a.completed);
+          const serverHasCompletedActs = (normalized.activities || []).some((a) => a.completed);
           const localHasNoCompletedActs = !(stateRef.current.activities || []).some((a) => a.completed);
 
           const shouldAdoptServer =
             isForcePull ||
-            serverRevision > localRevision ||
-            serverTime > localTime ||
-            (localTime === 0 && localRevision === 0) ||
+            serverRevision !== localRevision ||
+            serverTime !== localTime ||
+            localTime === 0 ||
             (serverHasCompletedActs && localHasNoCompletedActs);
 
           if (shouldAdoptServer) {
-            const normalized = normalizeAppState(res.state);
             setAppState(normalized);
             saveAppState(normalized);
-            setSyncStatus('synced');
-            return true;
-          } else if (localRevision > serverRevision || localTime > serverTime) {
-            // Local has newer un-pushed changes, sync up to server
-            const pushRes = await pushServerState(stateRef.current);
-            setSyncStatus(pushRes.success ? 'synced' : 'offline');
-            return pushRes.success;
           }
+          setSyncStatus('synced');
+          return true;
         }
         setSyncStatus('synced');
         return true;
@@ -167,7 +161,7 @@ export default function App() {
     []
   );
 
-  // Real-time synchronization via Server-Sent Events (SSE) + fast polling backup
+  // Real-time synchronization via Cloud Firestore onSnapshot
   useEffect(() => {
     // 1. Initial sync on mount
     performServerSync();
@@ -180,14 +174,10 @@ export default function App() {
         const incomingRev = incomingState.syncRevision || 0;
         const incomingTime = incomingState.serverUpdatedAt || 0;
 
-        const serverHasCompletedActs = (incomingState.activities || []).some((a) => a.completed);
-        const localHasNoCompletedActs = !(stateRef.current.activities || []).some((a) => a.completed);
-
         if (
-          incomingRev > currentRevision ||
-          incomingTime > currentTimestamp ||
-          currentTimestamp === 0 ||
-          (serverHasCompletedActs && localHasNoCompletedActs)
+          incomingRev !== currentRevision ||
+          incomingTime !== currentTimestamp ||
+          currentTimestamp === 0
         ) {
           setAppState(incomingState);
           saveAppState(incomingState);
@@ -199,10 +189,10 @@ export default function App() {
       }
     );
 
-    // 3. Fallback fast poll (every 3 seconds) for mobile network changes
+    // 3. Fallback poll (every 20 seconds) for mobile network changes
     const interval = window.setInterval(() => {
       performServerSync();
-    }, 3000);
+    }, 20000);
 
     // 4. On tab focus, screen wake-up, or online event, immediately trigger sync
     const onVisibilityOrFocus = () => {
