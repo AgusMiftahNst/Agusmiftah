@@ -28,10 +28,11 @@ import {
   getTodayDateString
 } from './utils/storage';
 import {
+  fetchServerStateDetailed,
   fetchServerState,
   pushServerState,
-  SyncStateStatus,
-  getLastServerTimestamp
+  subscribeToServerState,
+  SyncStateStatus
 } from './utils/sync';
 import { sound } from './utils/audio';
 import { sendLocalNotification } from './utils/notifications';
@@ -73,17 +74,38 @@ export default function App() {
   };
 
   // Initial and background server sync across HP and laptop
-  const performServerSync = useCallback(async () => {
+  const performServerSync = useCallback(async (isUserInitiated = false) => {
     try {
-      const serverData = await fetchServerState();
-      if (serverData && serverData.serverUpdatedAt) {
+      if (isUserInitiated) {
+        setSyncStatus('syncing');
+      }
+      const res = await fetchServerStateDetailed();
+
+      if (res.empty) {
+        // Server has no data file yet: seed server with current state so other devices can sync it
+        const pushRes = await pushServerState(stateRef.current);
+        if (pushRes.success && pushRes.serverUpdatedAt) {
+          setAppState((prev) => {
+            const next = { ...prev, serverUpdatedAt: pushRes.serverUpdatedAt! };
+            saveAppState(next);
+            return next;
+          });
+        }
+        setSyncStatus('synced');
+        return;
+      }
+
+      if (res.state && typeof res.state.serverUpdatedAt === 'number') {
         const localTime = stateRef.current.serverUpdatedAt || 0;
-        // If server data is newer than local, adopt it
-        if (serverData.serverUpdatedAt > localTime) {
-          setAppState(serverData);
-          saveAppState(serverData);
+        // If server state is newer, or if this device is newly opened (localTime === 0), adopt server state!
+        if (res.state.serverUpdatedAt > localTime || localTime === 0) {
+          setAppState(res.state);
+          saveAppState(res.state);
           setSyncStatus('synced');
           return;
+        } else if (localTime > res.state.serverUpdatedAt) {
+          // Local has newer un-pushed changes, sync up to server
+          await pushServerState(stateRef.current);
         }
       }
       setSyncStatus('synced');
@@ -92,19 +114,49 @@ export default function App() {
     }
   }, []);
 
-  // Poll server for changes every 4 seconds + on window focus/visibilitychange
+  // Real-time synchronization via Server-Sent Events (SSE) + fast polling backup
   useEffect(() => {
+    // 1. Initial sync on mount
     performServerSync();
 
-    const interval = window.setInterval(performServerSync, 4000);
-    const onFocus = () => performServerSync();
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', onFocus);
+    // 2. Real-time stream: immediately receives updates made on Laptop when viewed on HP, and vice versa!
+    const unsubscribeSSE = subscribeToServerState(
+      (incomingState) => {
+        const currentTimestamp = stateRef.current.serverUpdatedAt || 0;
+        if (
+          incomingState.serverUpdatedAt &&
+          (incomingState.serverUpdatedAt > currentTimestamp || currentTimestamp === 0)
+        ) {
+          setAppState(incomingState);
+          saveAppState(incomingState);
+          setSyncStatus('synced');
+        }
+      },
+      (status) => {
+        setSyncStatus(status);
+      }
+    );
+
+    // 3. Fallback fast poll (every 3 seconds) for mobile network changes
+    const interval = window.setInterval(() => {
+      performServerSync();
+    }, 3000);
+
+    // 4. On tab focus or screen wake-up, immediately trigger sync
+    const onVisibilityOrFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        performServerSync();
+      }
+    };
+
+    window.addEventListener('focus', onVisibilityOrFocus);
+    document.addEventListener('visibilitychange', onVisibilityOrFocus);
 
     return () => {
+      unsubscribeSSE();
       clearInterval(interval);
-      window.removeEventListener('focus', onFocus);
-      document.removeEventListener('visibilitychange', onFocus);
+      window.removeEventListener('focus', onVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', onVisibilityOrFocus);
     };
   }, [performServerSync]);
 
@@ -112,15 +164,29 @@ export default function App() {
   const updateAndSyncState = (updater: (prev: AppState) => AppState) => {
     setAppState((prev) => {
       const next = updater(prev);
-      const withTimestamp = {
+      const newTimestamp = Math.max(Date.now(), (prev.serverUpdatedAt || 0) + 1);
+      const withTimestamp: AppState = {
         ...next,
-        serverUpdatedAt: Date.now()
+        serverUpdatedAt: newTimestamp
       };
       saveAppState(withTimestamp);
       setSyncStatus('syncing');
-      pushServerState(withTimestamp).then((ok) => {
-        setSyncStatus(ok ? 'synced' : 'offline');
+
+      pushServerState(withTimestamp).then((res) => {
+        if (res.success) {
+          setSyncStatus('synced');
+          if (res.serverUpdatedAt && res.serverUpdatedAt !== newTimestamp) {
+            setAppState((current) => {
+              const updated = { ...current, serverUpdatedAt: res.serverUpdatedAt! };
+              saveAppState(updated);
+              return updated;
+            });
+          }
+        } else {
+          setSyncStatus('offline');
+        }
       });
+
       return withTimestamp;
     });
   };
@@ -385,7 +451,7 @@ export default function App() {
       {/* Mobile-Friendly Top Bar */}
       <MobileHeader
         syncStatus={syncStatus}
-        onManualSync={performServerSync}
+        onManualSync={() => performServerSync(true)}
         isDark={isDark}
         onToggleDark={handleToggleDark}
         soundEnabled={appState.settings.soundEnabled}
