@@ -18,12 +18,14 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
-(async function testConnection() {
+// Test connection gracefully without throwing uncaught errors
+export async function checkFirestoreConnection(): Promise<boolean> {
   try {
-    await getDocFromServer(doc(db, 'appData', 'connection_test'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firebase client initial status: offline/connecting.');
-    }
+    const testDoc = doc(db, 'appData', 'agus_main_state');
+    await getDocFromServer(testDoc);
+    return true;
+  } catch (err) {
+    console.warn('Firestore connection check:', err);
+    return false;
   }
-})();
+}
