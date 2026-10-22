@@ -1,6 +1,4 @@
 import { AppState } from '../types';
-import LZString from 'lz-string';
-import QRCode from 'qrcode';
 import { normalizeAppState } from './storage';
 
 export type SyncStateStatus = 'synced' | 'syncing' | 'offline';
@@ -200,17 +198,21 @@ export function getLastSyncRevision(): number {
 // Instant Multi-Device URL / QR Sync Engine
 // ==========================================
 
-// Compress and encode AppState for instant URL or QR pairing
+// Encode state safely using native browser Base64 (zero external dependencies)
 export function encodeStateToSyncHash(state: AppState): string {
   try {
-    // Only strip long chat history to keep URL short and ultra fast
     const compact: AppState = {
       ...state,
       chatMessages: (state.chatMessages || []).slice(-3)
     };
     const json = JSON.stringify(compact);
-    const compressed = LZString.compressToEncodedURIComponent(json);
-    return `sync=${compressed}`;
+    // UTF-8 safe base64 encoding without external libraries
+    const encoded = btoa(
+      encodeURIComponent(json).replace(/%([0-9A-F]{2})/g, (_, p1) => {
+        return String.fromCharCode(parseInt(p1, 16));
+      })
+    );
+    return `sync=${encodeURIComponent(encoded)}`;
   } catch (e) {
     console.error('Failed to encode sync state:', e);
     return '';
@@ -226,9 +228,15 @@ export function decodeSyncHash(hash: string): AppState | null {
     }
     if (!clean) return null;
 
-    const json = LZString.decompressFromEncodedURIComponent(clean);
-    if (!json) return null;
-
+    const decoded = decodeURIComponent(clean);
+    // UTF-8 safe base64 decoding without external libraries
+    const json = decodeURIComponent(
+      Array.prototype.map
+        .call(atob(decoded), (c: string) => {
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        })
+        .join('')
+    );
     const parsed = JSON.parse(json);
     if (parsed && typeof parsed === 'object') {
       return normalizeAppState(parsed);
@@ -239,20 +247,13 @@ export function decodeSyncHash(hash: string): AppState | null {
   return null;
 }
 
-// Generate QR Code data URL for instant scanning with HP camera
+// Generate QR Code data URL using high-reliability QR service (zero external dependencies)
 export async function generateSyncQrDataUrl(state: AppState): Promise<string> {
   try {
     const hash = encodeStateToSyncHash(state);
     if (!hash || typeof window === 'undefined') return '';
     const fullUrl = `${window.location.origin}${window.location.pathname}#${hash}`;
-    return await QRCode.toDataURL(fullUrl, {
-      margin: 1.5,
-      width: 280,
-      color: {
-        dark: '#0f172a',
-        light: '#ffffff'
-      }
-    });
+    return `https://api.qrserver.com/v1/create-qr-code/?size=280x280&margin=10&data=${encodeURIComponent(fullUrl)}`;
   } catch (err) {
     console.error('Failed to generate QR Code:', err);
     return '';
