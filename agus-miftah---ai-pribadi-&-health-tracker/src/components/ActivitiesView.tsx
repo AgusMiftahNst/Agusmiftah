@@ -6,6 +6,7 @@ import {
   Calendar,
   Clock,
   Trash2,
+  Edit3,
   AlertCircle,
   Tag,
   CheckCircle2,
@@ -16,11 +17,13 @@ import {
 import { ActivityItem } from '../types';
 import { getActivityUrgency, getTodayDateString, formatDateIndonesian } from '../utils/storage';
 import { sound } from '../utils/audio';
+import { EditActivityModal } from './EditActivityModal';
 
 interface ActivitiesViewProps {
   activities: ActivityItem[];
   onToggleActivity: (id: string) => void;
   onAddActivity: (activity: Omit<ActivityItem, 'id' | 'createdAt'>) => void;
+  onUpdateActivity: (activity: ActivityItem) => void;
   onDeleteActivity: (id: string) => void;
   onNavigateToReminders?: () => void;
   soundEnabled: boolean;
@@ -30,6 +33,7 @@ export function ActivitiesView({
   activities,
   onToggleActivity,
   onAddActivity,
+  onUpdateActivity,
   onDeleteActivity,
   onNavigateToReminders,
   soundEnabled
@@ -37,6 +41,7 @@ export function ActivitiesView({
   const [filterStatus, setFilterStatus] = useState<'pending' | 'completed' | 'all'>('pending');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingActivity, setEditingActivity] = useState<ActivityItem | null>(null);
 
   // New activity form state
   const [title, setTitle] = useState('');
@@ -242,10 +247,7 @@ export function ActivitiesView({
                 <div className="flex items-start gap-3">
                   {/* Tap-friendly Checkbox */}
                   <button
-                    onClick={() => {
-                      if (!act.completed && soundEnabled) sound.playSuccess();
-                      onToggleActivity(act.id);
-                    }}
+                    onClick={() => onToggleActivity(act.id)}
                     className="mt-0.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 active:scale-90 transition-transform p-0.5"
                     title={act.completed ? 'Tandai belum selesai' : 'Tandai selesai'}
                   >
@@ -299,14 +301,24 @@ export function ActivitiesView({
                     )}
                   </div>
 
-                  {/* Delete button */}
-                  <button
-                    onClick={() => onDeleteActivity(act.id)}
-                    className="text-slate-300 hover:text-rose-600 dark:text-slate-600 dark:hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    title="Hapus kegiatan"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {/* Actions: Edit & Delete */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => setEditingActivity(act)}
+                      className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                      title="Edit kegiatan"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={() => onDeleteActivity(act.id)}
+                      className="text-slate-300 hover:text-rose-600 dark:text-slate-600 dark:hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                      title="Hapus kegiatan"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -486,6 +498,17 @@ export function ActivitiesView({
           </div>
         </div>
       )}
+
+      {/* Edit Activity Modal */}
+      <EditActivityModal
+        isOpen={!!editingActivity}
+        activity={editingActivity}
+        onSave={(updated) => {
+          onUpdateActivity(updated);
+          if (soundEnabled) sound.playSuccess();
+        }}
+        onClose={() => setEditingActivity(null)}
+      />
     </div>
   );
 }
