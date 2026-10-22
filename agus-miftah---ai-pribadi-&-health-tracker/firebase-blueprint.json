@@ -1,0 +1,26 @@
+{
+  "entities": {
+    "AppState": {
+      "title": "AppState",
+      "description": "Comprehensive state including activities, habits, health checks, transactions, reminders, settings, and revision counters",
+      "type": "object",
+      "properties": {
+        "activities": { "type": "array" },
+        "habits": { "type": "array" },
+        "reminders": { "type": "array" },
+        "healthChecks": { "type": "array" },
+        "transactions": { "type": "array" },
+        "chatMessages": { "type": "array" },
+        "settings": { "type": "object" },
+        "serverUpdatedAt": { "type": "number" },
+        "syncRevision": { "type": "number" }
+      }
+    }
+  },
+  "firestore": {
+    "/appData/{docId}": {
+      "schema": "AppState",
+      "description": "Multi-device real-time sync document for Agus Miftah application state"
+    }
+  }
+}
