@@ -1,7 +1,12 @@
 import { AppState } from '../types';
 import { normalizeAppState } from './storage';
+import { db } from './firebase';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 
 export type SyncStateStatus = 'synced' | 'syncing' | 'offline';
+
+const FIRESTORE_COLLECTION = 'appData';
+const FIRESTORE_DOC_ID = 'agus_main_state';
 
 let lastServerTimestamp = 0;
 let lastSyncRevision = 0;
@@ -16,8 +21,37 @@ export interface FetchServerResult {
   isHtmlFallback?: boolean;
 }
 
-// Fetch state from server with cache busting and strict content-type validation
+// Fetch state from Firestore Cloud (or local server fallback)
 export async function fetchServerStateDetailed(): Promise<FetchServerResult> {
+  // 1. Try Firebase Cloud Firestore first (works on Vercel, HP, Laptop)
+  try {
+    const docRef = doc(db, FIRESTORE_COLLECTION, FIRESTORE_DOC_ID);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data && data.habits) {
+        if (typeof data.serverUpdatedAt === 'number') {
+          lastServerTimestamp = data.serverUpdatedAt;
+        }
+        if (typeof data.syncRevision === 'number') {
+          lastSyncRevision = data.syncRevision;
+        }
+        return {
+          state: normalizeAppState(data),
+          empty: false,
+          serverUpdatedAt: data.serverUpdatedAt,
+          syncRevision: data.syncRevision
+        };
+      }
+    } else {
+      // Cloud database document doesn't exist yet
+      return { state: null, empty: true };
+    }
+  } catch (err) {
+    console.warn('Firestore fetch failed, checking local API fallback:', err);
+  }
+
+  // 2. Fallback to local server /api/state
   try {
     const res = await fetch(`/api/state?_t=${Date.now()}`, {
       headers: {
@@ -27,32 +61,31 @@ export async function fetchServerStateDetailed(): Promise<FetchServerResult> {
       }
     });
 
-    if (!res.ok) return { state: null, empty: false };
-
-    const contentType = res.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) {
-      // Returned HTML (e.g., static hosting / Vercel SPA rewrite fallback)
-      return { state: null, empty: false, isHtmlFallback: true };
-    }
-
-    const data = await res.json();
-    if (data && data.empty) {
-      return { state: null, empty: true };
-    }
-
-    if (data && data.habits) {
-      if (typeof data.serverUpdatedAt === 'number') {
-        lastServerTimestamp = data.serverUpdatedAt;
+    if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        return { state: null, empty: false, isHtmlFallback: true };
       }
-      if (typeof data.syncRevision === 'number') {
-        lastSyncRevision = data.syncRevision;
+
+      const data = await res.json();
+      if (data && data.empty) {
+        return { state: null, empty: true };
       }
-      return {
-        state: normalizeAppState(data),
-        empty: false,
-        serverUpdatedAt: data.serverUpdatedAt,
-        syncRevision: data.syncRevision
-      };
+
+      if (data && data.habits) {
+        if (typeof data.serverUpdatedAt === 'number') {
+          lastServerTimestamp = data.serverUpdatedAt;
+        }
+        if (typeof data.syncRevision === 'number') {
+          lastSyncRevision = data.syncRevision;
+        }
+        return {
+          state: normalizeAppState(data),
+          empty: false,
+          serverUpdatedAt: data.serverUpdatedAt,
+          syncRevision: data.syncRevision
+        };
+      }
     }
   } catch {
     // Offline or server unreachable
@@ -66,7 +99,7 @@ export async function fetchServerState(): Promise<AppState | null> {
   return result.state;
 }
 
-// Push state to server with automatic queued retry
+// Push state to Cloud Firestore (with auto retry queue and local server sync)
 export async function pushServerState(
   state: AppState
 ): Promise<{ success: boolean; serverUpdatedAt?: number; syncRevision?: number }> {
@@ -77,33 +110,50 @@ export async function pushServerState(
 
   isPushing = true;
   try {
-    const res = await fetch('/api/state', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Cache-Control': 'no-cache'
-      },
-      body: JSON.stringify(state)
-    });
+    const newTimestamp = Date.now();
+    const newRevision = (state.syncRevision || 0) + 1;
+    const payload = {
+      ...state,
+      serverUpdatedAt: newTimestamp,
+      syncRevision: newRevision
+    };
 
-    const contentType = res.headers.get('content-type') || '';
-    if (res.ok && contentType.includes('application/json')) {
-      const data = await res.json();
-      if (typeof data.serverUpdatedAt === 'number') {
-        lastServerTimestamp = data.serverUpdatedAt;
-      }
-      if (typeof data.syncRevision === 'number') {
-        lastSyncRevision = data.syncRevision;
-      }
-      return {
-        success: true,
-        serverUpdatedAt: data.serverUpdatedAt,
-        syncRevision: data.syncRevision
-      };
-    }
+    // 1. Save to Cloud Firestore
+    const docRef = doc(db, FIRESTORE_COLLECTION, FIRESTORE_DOC_ID);
+    await setDoc(docRef, payload, { merge: true });
+
+    lastServerTimestamp = newTimestamp;
+    lastSyncRevision = newRevision;
+
+    // 2. Also background sync to local server if available
+    fetch('/api/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).catch(() => {});
+
+    return {
+      success: true,
+      serverUpdatedAt: newTimestamp,
+      syncRevision: newRevision
+    };
   } catch (err) {
-    console.warn('Sync push to server failed, cached in localStorage:', err);
+    console.warn('Push to Firestore failed, attempting local server fallback:', err);
+    try {
+      const res = await fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          success: true,
+          serverUpdatedAt: data.serverUpdatedAt,
+          syncRevision: data.syncRevision
+        };
+      }
+    } catch {}
     return { success: false };
   } finally {
     isPushing = false;
@@ -113,77 +163,61 @@ export async function pushServerState(
       pushServerState(queued);
     }
   }
-  return { success: false };
 }
 
-// Real-time synchronization subscription using Server-Sent Events (SSE)
+// Real-time synchronization subscription using Cloud Firestore onSnapshot
 export function subscribeToServerState(
   onUpdate: (state: AppState) => void,
   onStatusChange?: (status: SyncStateStatus) => void
 ): () => void {
-  if (typeof window === 'undefined' || typeof EventSource === 'undefined') {
+  if (typeof window === 'undefined') {
     return () => {};
   }
 
-  let eventSource: EventSource | null = null;
-  let isClosed = false;
-  let reconnectTimer: number | null = null;
+  let isUnsubscribed = false;
 
-  function connect() {
-    if (isClosed) return;
+  try {
+    const docRef = doc(db, FIRESTORE_COLLECTION, FIRESTORE_DOC_ID);
+    const unsubscribeFirestore = onSnapshot(
+      docRef,
+      (snapshot) => {
+        if (isUnsubscribed) return;
+        // Skip local optimistic write echoes to prevent state jumping
+        if (snapshot.metadata.hasPendingWrites) {
+          return;
+        }
 
-    try {
-      eventSource = new EventSource('/api/state/stream');
-
-      eventSource.onopen = () => {
-        onStatusChange?.('synced');
-      };
-
-      eventSource.onmessage = (event) => {
-        try {
-          if (!event.data || event.data === 'ping') return;
-          const data = JSON.parse(event.data);
-          if (data && data.habits && typeof data.serverUpdatedAt === 'number') {
-            lastServerTimestamp = data.serverUpdatedAt;
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data && data.habits) {
+            if (typeof data.serverUpdatedAt === 'number') {
+              lastServerTimestamp = data.serverUpdatedAt;
+            }
             if (typeof data.syncRevision === 'number') {
               lastSyncRevision = data.syncRevision;
             }
-            onUpdate(data as AppState);
+            onUpdate(normalizeAppState(data));
             onStatusChange?.('synced');
           }
-        } catch (err) {
-          console.error('Error parsing SSE message:', err);
         }
-      };
-
-      eventSource.onerror = () => {
+      },
+      (error) => {
+        console.warn('Firestore onSnapshot listener error:', error);
         onStatusChange?.('offline');
-        if (eventSource) {
-          eventSource.close();
-          eventSource = null;
-        }
-        if (!isClosed) {
-          reconnectTimer = window.setTimeout(connect, 3000);
-        }
-      };
-    } catch {
-      onStatusChange?.('offline');
-      if (!isClosed) {
-        reconnectTimer = window.setTimeout(connect, 4000);
       }
-    }
+    );
+
+    onStatusChange?.('synced');
+
+    return () => {
+      isUnsubscribed = true;
+      unsubscribeFirestore();
+    };
+  } catch (err) {
+    console.error('Failed to initialize Firestore real-time listener:', err);
+    onStatusChange?.('offline');
+    return () => {};
   }
-
-  connect();
-
-  return () => {
-    isClosed = true;
-    if (reconnectTimer) clearTimeout(reconnectTimer);
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-    }
-  };
 }
 
 export function getLastServerTimestamp(): number {
