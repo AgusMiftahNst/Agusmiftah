@@ -13,6 +13,7 @@ import { RemindersView } from './components/RemindersView';
 import { ActivitiesView } from './components/ActivitiesView';
 import { AIChatView } from './components/AIChatView';
 import { HealthCheckModal } from './components/HealthCheckModal';
+import { SyncModal } from './components/SyncModal';
 import {
   AppState,
   ActivityItem,
@@ -25,6 +26,7 @@ import {
 import {
   loadAppState,
   saveAppState,
+  normalizeAppState,
   getTodayDateString
 } from './utils/storage';
 import {
@@ -32,7 +34,8 @@ import {
   fetchServerState,
   pushServerState,
   subscribeToServerState,
-  SyncStateStatus
+  SyncStateStatus,
+  decodeSyncHash
 } from './utils/sync';
 import { generateContextualJarvisReply } from './utils/jarvisBrain';
 import { sound } from './utils/audio';
@@ -43,6 +46,8 @@ export default function App() {
   const [currentTab, setCurrentTab] = useState<MainTabType>('home');
   const [syncStatus, setSyncStatus] = useState<SyncStateStatus>('synced');
   const [isHealthCheckOpen, setIsHealthCheckOpen] = useState(false);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [syncToast, setSyncToast] = useState<string | null>(null);
   const [lastNotifiedTime, setLastNotifiedTime] = useState<string>('');
 
   // Dark mode state
@@ -74,46 +79,93 @@ export default function App() {
     setIsDark((prev) => !prev);
   };
 
-  // Initial and background server sync across HP and laptop
-  const performServerSync = useCallback(async (isUserInitiated = false) => {
-    try {
-      if (isUserInitiated) {
-        setSyncStatus('syncing');
+  // Check URL hash on load for instant QR Code / Sync Link pairing from Laptop to HP
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.hash.includes('sync=')) {
+      const decoded = decodeSyncHash(window.location.hash);
+      if (decoded) {
+        const normalized = normalizeAppState(decoded);
+        setAppState(normalized);
+        saveAppState(normalized);
+        pushServerState(normalized);
+        sound.playBreathCue(true);
+        setSyncToast('Data dari Laptop berhasil disinkronkan ke HP Anda!');
+        window.history.replaceState(null, '', window.location.pathname);
+        const timer = setTimeout(() => setSyncToast(null), 5000);
+        return () => clearTimeout(timer);
       }
-      const res = await fetchServerStateDetailed();
-
-      if (res.empty) {
-        // Server has no data file yet: seed server with current state so other devices can sync it
-        const pushRes = await pushServerState(stateRef.current);
-        if (pushRes.success && pushRes.serverUpdatedAt) {
-          setAppState((prev) => {
-            const next = { ...prev, serverUpdatedAt: pushRes.serverUpdatedAt! };
-            saveAppState(next);
-            return next;
-          });
-        }
-        setSyncStatus('synced');
-        return;
-      }
-
-      if (res.state && typeof res.state.serverUpdatedAt === 'number') {
-        const localTime = stateRef.current.serverUpdatedAt || 0;
-        // If server state is newer, or if this device is newly opened (localTime === 0), adopt server state!
-        if (res.state.serverUpdatedAt > localTime || localTime === 0) {
-          setAppState(res.state);
-          saveAppState(res.state);
-          setSyncStatus('synced');
-          return;
-        } else if (localTime > res.state.serverUpdatedAt) {
-          // Local has newer un-pushed changes, sync up to server
-          await pushServerState(stateRef.current);
-        }
-      }
-      setSyncStatus('synced');
-    } catch {
-      setSyncStatus('offline');
     }
   }, []);
+
+  // Initial and background server sync across HP and laptop
+  const performServerSync = useCallback(
+    async (isUserInitiated = false, isForcePull = false): Promise<boolean> => {
+      try {
+        if (isUserInitiated) {
+          setSyncStatus('syncing');
+        }
+        const res = await fetchServerStateDetailed();
+
+        if (res.isHtmlFallback) {
+          setSyncStatus('offline');
+          return false;
+        }
+
+        if (res.empty) {
+          // Server has no data file yet: seed server with current state if local has real data
+          if ((stateRef.current.serverUpdatedAt || 0) > 0) {
+            const pushRes = await pushServerState(stateRef.current);
+            if (pushRes.success && pushRes.serverUpdatedAt) {
+              setAppState((prev) => {
+                const next = { ...prev, serverUpdatedAt: pushRes.serverUpdatedAt!, syncRevision: pushRes.syncRevision };
+                saveAppState(next);
+                return next;
+              });
+            }
+          }
+          setSyncStatus('synced');
+          return true;
+        }
+
+        if (res.state && (typeof res.state.serverUpdatedAt === 'number' || typeof res.state.syncRevision === 'number')) {
+          const localTime = stateRef.current.serverUpdatedAt || 0;
+          const localRevision = stateRef.current.syncRevision || 0;
+          const serverRevision = res.state.syncRevision || 0;
+          const serverTime = res.state.serverUpdatedAt || 0;
+
+          // Check if server has activities or checks that local doesn't have completed
+          const serverHasCompletedActs = (res.state.activities || []).some((a) => a.completed);
+          const localHasNoCompletedActs = !(stateRef.current.activities || []).some((a) => a.completed);
+
+          const shouldAdoptServer =
+            isForcePull ||
+            serverRevision > localRevision ||
+            serverTime > localTime ||
+            (localTime === 0 && localRevision === 0) ||
+            (serverHasCompletedActs && localHasNoCompletedActs);
+
+          if (shouldAdoptServer) {
+            const normalized = normalizeAppState(res.state);
+            setAppState(normalized);
+            saveAppState(normalized);
+            setSyncStatus('synced');
+            return true;
+          } else if (localRevision > serverRevision || localTime > serverTime) {
+            // Local has newer un-pushed changes, sync up to server
+            const pushRes = await pushServerState(stateRef.current);
+            setSyncStatus(pushRes.success ? 'synced' : 'offline');
+            return pushRes.success;
+          }
+        }
+        setSyncStatus('synced');
+        return true;
+      } catch {
+        setSyncStatus('offline');
+        return false;
+      }
+    },
+    []
+  );
 
   // Real-time synchronization via Server-Sent Events (SSE) + fast polling backup
   useEffect(() => {
@@ -124,9 +176,18 @@ export default function App() {
     const unsubscribeSSE = subscribeToServerState(
       (incomingState) => {
         const currentTimestamp = stateRef.current.serverUpdatedAt || 0;
+        const currentRevision = stateRef.current.syncRevision || 0;
+        const incomingRev = incomingState.syncRevision || 0;
+        const incomingTime = incomingState.serverUpdatedAt || 0;
+
+        const serverHasCompletedActs = (incomingState.activities || []).some((a) => a.completed);
+        const localHasNoCompletedActs = !(stateRef.current.activities || []).some((a) => a.completed);
+
         if (
-          incomingState.serverUpdatedAt &&
-          (incomingState.serverUpdatedAt > currentTimestamp || currentTimestamp === 0)
+          incomingRev > currentRevision ||
+          incomingTime > currentTimestamp ||
+          currentTimestamp === 0 ||
+          (serverHasCompletedActs && localHasNoCompletedActs)
         ) {
           setAppState(incomingState);
           saveAppState(incomingState);
@@ -143,7 +204,7 @@ export default function App() {
       performServerSync();
     }, 3000);
 
-    // 4. On tab focus or screen wake-up, immediately trigger sync
+    // 4. On tab focus, screen wake-up, or online event, immediately trigger sync
     const onVisibilityOrFocus = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         performServerSync();
@@ -151,15 +212,51 @@ export default function App() {
     };
 
     window.addEventListener('focus', onVisibilityOrFocus);
+    window.addEventListener('online', onVisibilityOrFocus);
     document.addEventListener('visibilitychange', onVisibilityOrFocus);
 
     return () => {
       unsubscribeSSE();
       clearInterval(interval);
       window.removeEventListener('focus', onVisibilityOrFocus);
+      window.removeEventListener('online', onVisibilityOrFocus);
       document.removeEventListener('visibilitychange', onVisibilityOrFocus);
     };
   }, [performServerSync]);
+
+  // Force push current state to server
+  const handleForcePush = async (): Promise<boolean> => {
+    setSyncStatus('syncing');
+    const newTimestamp = Date.now();
+    const updatedState: AppState = {
+      ...stateRef.current,
+      serverUpdatedAt: newTimestamp
+    };
+    const res = await pushServerState(updatedState);
+    if (res.success) {
+      const next = {
+        ...updatedState,
+        serverUpdatedAt: res.serverUpdatedAt || newTimestamp,
+        syncRevision: res.syncRevision
+      };
+      setAppState(next);
+      saveAppState(next);
+      setSyncStatus('synced');
+      return true;
+    }
+    setSyncStatus('offline');
+    return false;
+  };
+
+  // Import state from backup file
+  const handleImportState = (imported: AppState) => {
+    const normalized = normalizeAppState(imported);
+    setAppState(normalized);
+    saveAppState(normalized);
+    pushServerState(normalized);
+    setSyncToast('Data cadangan berhasil dipulihkan!');
+    setTimeout(() => setSyncToast(null), 4000);
+  };
 
   // Push state to server and save to localStorage on every local change
   const updateAndSyncState = (updater: (prev: AppState) => AppState) => {
@@ -176,9 +273,13 @@ export default function App() {
       pushServerState(withTimestamp).then((res) => {
         if (res.success) {
           setSyncStatus('synced');
-          if (res.serverUpdatedAt && res.serverUpdatedAt !== newTimestamp) {
+          if (res.serverUpdatedAt || res.syncRevision) {
             setAppState((current) => {
-              const updated = { ...current, serverUpdatedAt: res.serverUpdatedAt! };
+              const updated = {
+                ...current,
+                serverUpdatedAt: res.serverUpdatedAt || current.serverUpdatedAt,
+                syncRevision: res.syncRevision || current.syncRevision
+              };
               saveAppState(updated);
               return updated;
             });
@@ -260,15 +361,17 @@ export default function App() {
   // Habit mutations
   const handleToggleHabit = (habitId: string) => {
     updateAndSyncState((prev) => {
-      const habits = prev.habits.map((h) => {
+      const habits = (prev.habits || []).map((h) => {
         if (h.id !== habitId) return h;
-        const current = h.history[todayDate] || 0;
-        const isDone = current >= h.targetCount;
-        const nextVal = isDone ? 0 : h.targetCount;
+        const historyObj = (h.history && typeof h.history === 'object') ? h.history : {};
+        const current = historyObj[todayDate] || 0;
+        const target = h.targetCount || 1;
+        const isDone = current >= target;
+        const nextVal = isDone ? 0 : target;
         return {
           ...h,
-          history: { ...h.history, [todayDate]: nextVal },
-          currentStreak: !isDone ? h.currentStreak + 1 : Math.max(0, h.currentStreak - 1)
+          history: { ...historyObj, [todayDate]: nextVal },
+          currentStreak: !isDone ? (h.currentStreak || 0) + 1 : Math.max(0, (h.currentStreak || 0) - 1)
         };
       });
       return { ...prev, habits };
@@ -277,13 +380,14 @@ export default function App() {
 
   const handleIncrementHabit = (habitId: string, delta: number) => {
     updateAndSyncState((prev) => {
-      const habits = prev.habits.map((h) => {
+      const habits = (prev.habits || []).map((h) => {
         if (h.id !== habitId) return h;
-        const current = h.history[todayDate] || 0;
+        const historyObj = (h.history && typeof h.history === 'object') ? h.history : {};
+        const current = historyObj[todayDate] || 0;
         const nextVal = Math.max(0, current + delta);
         return {
           ...h,
-          history: { ...h.history, [todayDate]: nextVal }
+          history: { ...historyObj, [todayDate]: nextVal }
         };
       });
       return { ...prev, habits };
@@ -384,9 +488,9 @@ export default function App() {
           priority: a.priority
         })),
       latestHealthCheck: appState.healthChecks[0],
-      todayHabits: appState.habits.map((h) => ({
+      todayHabits: (appState.habits || []).map((h) => ({
         title: h.title,
-        progress: `${h.history[todayDate] || 0}/${h.targetCount} ${h.unit}`
+        progress: `${(h.history && h.history[todayDate]) || 0}/${h.targetCount || 1} ${h.unit || ''}`
       })),
       recentTransactions: appState.transactions.slice(0, 5)
     };
@@ -459,11 +563,21 @@ export default function App() {
   const pendingActivitiesCount = (appState.activities || []).filter((a) => !a.completed).length;
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col font-sans transition-colors">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col font-sans transition-colors relative">
+      {/* Toast Alert for Sync */}
+      {syncToast && (
+        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 max-w-sm w-[92%] bg-emerald-600 dark:bg-emerald-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-xl flex items-center justify-between border border-emerald-400">
+          <span>{syncToast}</span>
+          <button onClick={() => setSyncToast(null)} className="ml-2 p-1 hover:bg-emerald-700 rounded-md">
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Mobile-Friendly Top Bar */}
       <MobileHeader
         syncStatus={syncStatus}
-        onManualSync={() => performServerSync(true)}
+        onOpenSyncModal={() => setIsSyncModalOpen(true)}
         isDark={isDark}
         onToggleDark={handleToggleDark}
         soundEnabled={appState.settings.soundEnabled}
@@ -548,6 +662,17 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Sync HP & Laptop Modal */}
+      <SyncModal
+        isOpen={isSyncModalOpen}
+        onClose={() => setIsSyncModalOpen(false)}
+        appState={appState}
+        syncStatus={syncStatus}
+        onForcePull={() => performServerSync(true, true)}
+        onForcePush={handleForcePush}
+        onImportState={handleImportState}
+      />
 
       {/* Health Check Input Modal */}
       <HealthCheckModal
