@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
+import { generateContextualJarvisReply } from './src/utils/jarvisBrain.js';
 
 dotenv.config();
 
@@ -117,9 +118,11 @@ app.post('/api/state', (req, res) => {
 
 // API: AI Agus Miftah Friendly Personal AI
 app.post('/api/ai/chat', async (req, res) => {
-  try {
-    const { messages, userContext } = req.body;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  const { messages, userContext } = req.body || {};
+  const lastUserMsg = (messages || []).filter((m: any) => m.role === 'user').slice(-1)[0]?.text || '';
 
+  try {
     const systemInstruction = `Kamu adalah "JARVIS", asisten AI pribadi yang cerdas, sigap, ramah, dan sangat suportif (asisten pribadi digital khusus untuk Agus).
 Kamu berbicara dengan bahasa Indonesia yang natural, akrab, solutif, dan penuh perhatian layaknya asisten pribadi terpercaya (gaya cerdas, to-the-point, namun tetap ramah).
 
@@ -143,23 +146,33 @@ ${JSON.stringify(userContext || {})}`;
       return res.json({ reply: 'JARVIS online. Halo Agus, ada yang bisa saya bantu sekarang?' });
     }
 
-    const response = await ai.models.generateContent({
+    // Call Gemini with a 3.5s timeout so the user never hangs
+    const geminiPromise = ai.models.generateContent({
       model: 'gemini-3.8-flash',
       contents: formattedContents,
       config: {
         systemInstruction,
         temperature: 0.8,
       },
+    }).then((r) => r.text || null).catch((err) => {
+      console.warn('Gemini 3.8 call returned error:', err?.message || err);
+      return null;
     });
 
-    const reply = response.text || 'Halo! Aku Agus Miftah. Senang bisa ngobrol denganmu hari ini!';
-    return res.json({ reply });
+    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3500));
+    const resultText = await Promise.race([geminiPromise, timeoutPromise]);
+
+    if (resultText && resultText.trim()) {
+      return res.json({ reply: resultText });
+    }
+
+    // Seamless smart fallback if external API is busy or timed out
+    const fallback = generateContextualJarvisReply(lastUserMsg, userContext);
+    return res.json({ reply: fallback });
   } catch (error: any) {
-    console.error('Gemini error:', error);
-    return res.status(500).json({
-      error: 'Terjadi kendala saat memproses jawaban AI Agus Miftah.',
-      details: error?.message || String(error),
-    });
+    console.error('AI chat endpoint fallback invoked:', error?.message || error);
+    const fallback = generateContextualJarvisReply(lastUserMsg, userContext);
+    return res.json({ reply: fallback });
   }
 });
 
