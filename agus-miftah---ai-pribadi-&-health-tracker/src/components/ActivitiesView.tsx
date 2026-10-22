@@ -301,12 +301,8 @@ export function ActivitiesView({
 
                   {/* Delete button */}
                   <button
-                    onClick={() => {
-                      if (confirm('Hapus kegiatan ini?')) {
-                        onDeleteActivity(act.id);
-                      }
-                    }}
-                    className="text-slate-300 hover:text-rose-600 dark:text-slate-600 dark:hover:text-rose-400 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    onClick={() => onDeleteActivity(act.id)}
+                    className="text-slate-300 hover:text-rose-600 dark:text-slate-600 dark:hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     title="Hapus kegiatan"
                   >
                     <Trash2 className="w-4 h-4" />
