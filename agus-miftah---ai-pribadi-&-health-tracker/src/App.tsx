@@ -349,6 +349,8 @@ export default function App() {
         if (appState.settings.soundEnabled) {
           sound.playBreathCue(false);
         }
+      } else {
+        throw new Error(`API error: ${res.status}`);
       }
     } catch (err) {
       console.error('Failed to get AI reply:', err);
