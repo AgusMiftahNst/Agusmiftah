@@ -9,7 +9,8 @@ import {
   UserSettings
 } from '../types';
 
-const STORAGE_KEY = 'agus_miftah_app_state_v2';
+const STORAGE_KEY = 'agus_miftah_app_state_v3';
+const LEGACY_STORAGE_KEY = 'agus_miftah_app_state_v2';
 
 export function getTodayDateString(offsetDays = 0): string {
   const d = new Date();
@@ -355,7 +356,7 @@ export function getInitialDefaultState(): AppState {
     {
       id: 'msg-1',
       role: 'model',
-      text: 'Halo Agus! Aku Agus Miftah, asisten AI pribadi kamu. Senang bisa menemanimu! Mau cek hasil tensi dan asam urat, atau mau lihat daftar kegiatan & deadline yang belum dikerjakan hari ini?',
+      text: 'JARVIS online. Halo Agus! Sistem siap membantu Anda memantau skrining kesehatan (tensi, asam urat, gula darah), target harian, serta melacak kegiatan dan deadline yang belum selesai. Ada yang perlu saya proses hari ini?',
       timestamp: Date.now() - 3600000
     }
   ];
@@ -374,7 +375,7 @@ export function getInitialDefaultState(): AppState {
     transactions: defaultTransactions,
     chatMessages: defaultChatMessages,
     settings: defaultSettings,
-    serverUpdatedAt: Date.now()
+    serverUpdatedAt: 0
   };
 }
 
@@ -383,16 +384,23 @@ export function loadAppState(): AppState {
     return getInitialDefaultState();
   }
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    let raw = localStorage.getItem(STORAGE_KEY);
+    let isLegacy = false;
+    if (!raw) {
+      raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+      isLegacy = true;
+    }
+
     if (!raw) {
       const initial = getInitialDefaultState();
       saveAppState(initial);
       return initial;
     }
+
     const parsed = JSON.parse(raw) as Partial<AppState>;
     const defaultState = getInitialDefaultState();
 
-    return {
+    const loaded: AppState = {
       activities: Array.isArray(parsed.activities) && parsed.activities.length > 0 ? parsed.activities : defaultState.activities,
       habits: Array.isArray(parsed.habits) && parsed.habits.length > 0 ? parsed.habits : defaultState.habits,
       reminders: Array.isArray(parsed.reminders) ? parsed.reminders : defaultState.reminders,
@@ -400,8 +408,15 @@ export function loadAppState(): AppState {
       transactions: Array.isArray(parsed.transactions) ? parsed.transactions : defaultState.transactions,
       chatMessages: Array.isArray(parsed.chatMessages) && parsed.chatMessages.length > 0 ? parsed.chatMessages : defaultState.chatMessages,
       settings: { ...defaultState.settings, ...(parsed.settings || {}) },
-      serverUpdatedAt: parsed.serverUpdatedAt || defaultState.serverUpdatedAt
+      // If migrated from legacy, reset serverUpdatedAt to 0 so fresh server data can sync
+      serverUpdatedAt: isLegacy ? 0 : (typeof parsed.serverUpdatedAt === 'number' ? parsed.serverUpdatedAt : 0)
     };
+
+    if (isLegacy) {
+      saveAppState(loaded);
+    }
+
+    return loaded;
   } catch (e) {
     console.error('Failed to load local state, using initial state:', e);
     return getInitialDefaultState();
