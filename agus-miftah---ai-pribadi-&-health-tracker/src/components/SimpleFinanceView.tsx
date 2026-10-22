@@ -257,7 +257,8 @@ export function SimpleFinanceView({
                   </span>
                   <button
                     onClick={() => onDeleteTransaction(tx.id)}
-                    className="p-1 text-slate-400 hover:text-red-500 rounded transition-colors"
+                    className="p-2 text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
+                    title="Hapus Transaksi"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
