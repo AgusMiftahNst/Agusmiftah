@@ -15,6 +15,7 @@ import { AIChatView } from './components/AIChatView';
 import { HealthCheckModal } from './components/HealthCheckModal';
 import { SyncModal } from './components/SyncModal';
 import { ConfirmDeleteModal } from './components/ConfirmDeleteModal';
+import { ConfirmCompleteModal } from './components/ConfirmCompleteModal';
 import {
   AppState,
   ActivityItem,
@@ -60,6 +61,7 @@ export default function App() {
   const [isHealthCheckOpen, setIsHealthCheckOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<DeleteConfirmTarget | null>(null);
+  const [completeConfirmActivity, setCompleteConfirmActivity] = useState<ActivityItem | null>(null);
   const [syncToast, setSyncToast] = useState<string | null>(null);
   const [lastNotifiedTime, setLastNotifiedTime] = useState<string>('');
 
@@ -340,6 +342,35 @@ export default function App() {
       });
       return { ...prev, activities };
     });
+  };
+
+  const handleUpdateActivity = (updatedAct: ActivityItem) => {
+    updateAndSyncState((prev) => ({
+      ...prev,
+      activities: (prev.activities || []).map((a) => (a.id === updatedAct.id ? updatedAct : a))
+    }));
+  };
+
+  const requestToggleActivity = (id: string) => {
+    const act = (appState.activities || []).find((a) => a.id === id);
+    if (!act) return;
+
+    if (!act.completed) {
+      // Prompt user confirmation before marking completed
+      setCompleteConfirmActivity(act);
+    } else {
+      // Unchecking an already completed activity toggles directly
+      handleToggleActivity(id);
+    }
+  };
+
+  const handleConfirmComplete = () => {
+    if (!completeConfirmActivity) return;
+    handleToggleActivity(completeConfirmActivity.id);
+    if (appState.settings.soundEnabled) {
+      sound.playSuccess();
+    }
+    setCompleteConfirmActivity(null);
   };
 
   const handleAddActivity = (newAct: Omit<ActivityItem, 'id' | 'createdAt'>) => {
@@ -671,7 +702,7 @@ export default function App() {
             healthChecks={appState.healthChecks}
             transactions={appState.transactions}
             reminders={appState.reminders}
-            onToggleActivity={handleToggleActivity}
+            onToggleActivity={requestToggleActivity}
             onToggleHabit={handleToggleHabit}
             onIncrementHabit={handleIncrementHabit}
             onOpenHealthModal={() => setIsHealthCheckOpen(true)}
@@ -684,8 +715,9 @@ export default function App() {
         {currentTab === 'activities' && (
           <ActivitiesView
             activities={appState.activities || []}
-            onToggleActivity={handleToggleActivity}
+            onToggleActivity={requestToggleActivity}
             onAddActivity={handleAddActivity}
+            onUpdateActivity={handleUpdateActivity}
             onDeleteActivity={requestDeleteActivity}
             onNavigateToReminders={() => setCurrentTab('reminders')}
             soundEnabled={appState.settings.soundEnabled}
@@ -738,6 +770,14 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Confirmation Modal when marking activity as completed */}
+      <ConfirmCompleteModal
+        isOpen={!!completeConfirmActivity}
+        activity={completeConfirmActivity}
+        onConfirm={handleConfirmComplete}
+        onCancel={() => setCompleteConfirmActivity(null)}
+      />
 
       {/* Universal Delete Confirmation Modal */}
       <ConfirmDeleteModal
