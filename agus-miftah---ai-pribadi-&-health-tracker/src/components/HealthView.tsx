@@ -44,7 +44,7 @@ export function HealthView({
   const analysis = latestCheck ? generateComprehensiveAnalysis(latestCheck) : null;
 
   const waterHabit = habits.find((h) => h.id === 'h-1');
-  const currentWater = waterHabit?.history[todayDate] || 0;
+  const currentWater = (waterHabit?.history && waterHabit.history[todayDate]) || 0;
   const targetWater = waterHabit?.targetCount || 8;
 
   const getBadge = (status: HealthStatusLevel, label: string) => {
