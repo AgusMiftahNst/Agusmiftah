@@ -26,13 +26,65 @@ const ai = new GoogleGenAI({
   },
 });
 
-// API: Get shared state for device synchronization
-app.get('/api/state', (req, res) => {
+// Real-time synchronization via Server-Sent Events (SSE)
+const sseClients = new Set<express.Response>();
+
+function broadcastStateUpdate(data: any) {
+  const payload = `data: ${JSON.stringify(data)}\n\n`;
+  for (const client of sseClients) {
+    try {
+      client.write(payload);
+    } catch {
+      sseClients.delete(client);
+    }
+  }
+}
+
+// API: Stream real-time state updates to all connected devices (HP, Laptop)
+app.get('/api/state/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  // Send current state immediately on initial connection if available
   try {
     if (fs.existsSync(DATA_FILE)) {
       const content = fs.readFileSync(DATA_FILE, 'utf-8');
       const parsed = JSON.parse(content);
-      return res.json(parsed);
+      res.write(`data: ${JSON.stringify(parsed)}\n\n`);
+    }
+  } catch (err) {
+    console.error('Error sending initial SSE state:', err);
+  }
+
+  sseClients.add(res);
+
+  // Keep-alive heartbeat every 15 seconds
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(': ping\n\n');
+    } catch {
+      clearInterval(heartbeat);
+      sseClients.delete(res);
+    }
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    sseClients.delete(res);
+  });
+});
+
+// API: Get shared state for device synchronization
+app.get('/api/state', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const content = fs.readFileSync(DATA_FILE, 'utf-8');
+      const parsed = JSON.parse(content);
+      return res.json({ empty: false, ...parsed });
     }
   } catch (err) {
     console.error('Error reading data file:', err);
@@ -42,13 +94,20 @@ app.get('/api/state', (req, res) => {
 
 // API: Save shared state across devices
 app.post('/api/state', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   try {
     const data = req.body;
+    const now = Date.now();
+    const serverUpdatedAt = Math.max(now, (data.serverUpdatedAt || 0) + 1);
     const toSave = {
       ...data,
-      serverUpdatedAt: Date.now(),
+      serverUpdatedAt,
     };
     fs.writeFileSync(DATA_FILE, JSON.stringify(toSave, null, 2), 'utf-8');
+    
+    // Broadcast instantly to all connected phones, tablets & laptops
+    broadcastStateUpdate(toSave);
+
     return res.json({ success: true, serverUpdatedAt: toSave.serverUpdatedAt });
   } catch (err) {
     console.error('Error saving data file:', err);
@@ -61,16 +120,16 @@ app.post('/api/ai/chat', async (req, res) => {
   try {
     const { messages, userContext } = req.body;
 
-    const systemInstruction = `Kamu adalah "Agus Miftah", asisten AI pribadi yang sangat ramah, hangat, santai, dan friendly.
-Kamu berbicara dengan bahasa Indonesia yang natural, akrab, suportif, dan penuh perhatian (seperti kawan dekat yang peduli kesehatan, kerjaan, dan rutinitas harian).
+    const systemInstruction = `Kamu adalah "JARVIS", asisten AI pribadi yang cerdas, sigap, ramah, dan sangat suportif (asisten pribadi digital khusus untuk Agus).
+Kamu berbicara dengan bahasa Indonesia yang natural, akrab, solutif, dan penuh perhatian layaknya asisten pribadi terpercaya (gaya cerdas, to-the-point, namun tetap ramah).
 
-Tugas & Kepribadianmu:
-1. Selalu menyapa dengan hangat dan ramah (panggil pengguna dengan santai).
-2. Membantu memantau kesehatan pengguna (tensi darah, asam urat, kolesterol, gula darah, tidur, dan minum air putih) serta mengingat kegiatan/tugas dan deadline yang belum selesai.
-3. Jika pengguna bertanya tentang tugas/deadline, rangkumkan kegiatan yang belum dikerjakan dan beri semangat (misal: "Hari ini ada deadline kirim laporan pk 17:00, yuk gas selesaikan!").
-4. Jika pengguna bertanya tentang makanan atau hasil lab, berikan penjelasan sederhana yang mudah dimengerti (misal: "Wah asam uratnya agak naik ya, sementara hindari emping sama jeroan dulu ya! Jangan lupa minum air minimal 2 liter per hari.").
-5. Format jawabanmu ringkas, to the point, rapi, dan mudah dibaca di layar HP (jangan memberikan teks panjang lebar yang bikin pusing).
-6. Beri dorongan positif dan motivasi harian.
+Tugas & Kemampuanmu:
+1. Menyapa pengguna dengan hangat (panggil "Agus" atau "Pak Agus" / "Boss" santai).
+2. Membantu memantau kesehatan (tensi darah, asam urat, kolesterol, gula darah, target minum air, tidur).
+3. Mengingatkan kegiatan, tugas kerjaan, dan deadline yang belum selesai dengan sigap.
+4. Jika ditanya tentang makanan atau hasil skrining lab, berikan analisa ringkas dan jelas yang mudah dipahami di layar HP.
+5. Format jawaban selalu ringkas, terstruktur, rapi, dan nyaman dibaca (hindari paragraf panjang yang membosankan).
+6. Berikan motivasi produktif dan dorongan positif.
 
 Konteks data pengguna saat ini:
 ${JSON.stringify(userContext || {})}`;
@@ -81,7 +140,7 @@ ${JSON.stringify(userContext || {})}`;
     }));
 
     if (formattedContents.length === 0) {
-      return res.json({ reply: 'Halo! Aku Agus Miftah, AI pribadi kamu. Ada yang bisa kubantu hari ini?' });
+      return res.json({ reply: 'JARVIS online. Halo Agus, ada yang bisa saya bantu sekarang?' });
     }
 
     const response = await ai.models.generateContent({
