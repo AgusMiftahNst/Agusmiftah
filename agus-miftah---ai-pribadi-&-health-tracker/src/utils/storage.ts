@@ -379,6 +379,61 @@ export function getInitialDefaultState(): AppState {
   };
 }
 
+export function normalizeHabit(h: any): HabitItem {
+  if (!h || typeof h !== 'object') {
+    return {
+      id: `h-${Date.now()}`,
+      title: 'Kebiasaan',
+      category: 'kesehatan',
+      targetCount: 1,
+      unit: 'centang',
+      iconName: 'Activity',
+      color: '#10B981',
+      history: {},
+      currentStreak: 0
+    };
+  }
+  return {
+    id: String(h.id || `h-${Math.random().toString(36).substring(2, 7)}`),
+    title: String(h.title || 'Kebiasaan'),
+    category: h.category || 'kesehatan',
+    targetCount: typeof h.targetCount === 'number' && h.targetCount > 0 ? h.targetCount : 1,
+    unit: String(h.unit || 'centang'),
+    iconName: String(h.iconName || 'Activity'),
+    color: String(h.color || '#10B981'),
+    history: h.history && typeof h.history === 'object' && !Array.isArray(h.history) ? { ...h.history } : {},
+    currentStreak: typeof h.currentStreak === 'number' ? h.currentStreak : 0
+  };
+}
+
+export function normalizeAppState(parsed: any): AppState {
+  const defaultState = getInitialDefaultState();
+  if (!parsed || typeof parsed !== 'object') {
+    return defaultState;
+  }
+
+  const rawHabits = Array.isArray(parsed.habits) && parsed.habits.length > 0 ? parsed.habits : defaultState.habits;
+  let habits: HabitItem[] = rawHabits.map(normalizeHabit);
+
+  // If water habit (h-1) is missing, provide default water habit
+  if (!habits.some((h: HabitItem) => h.id === 'h-1')) {
+    const defaultWater = defaultState.habits.find((h) => h.id === 'h-1');
+    if (defaultWater) habits.unshift(defaultWater);
+  }
+
+  return {
+    activities: Array.isArray(parsed.activities) ? parsed.activities : defaultState.activities,
+    habits,
+    reminders: Array.isArray(parsed.reminders) ? parsed.reminders : defaultState.reminders,
+    healthChecks: Array.isArray(parsed.healthChecks) ? parsed.healthChecks : defaultState.healthChecks,
+    transactions: Array.isArray(parsed.transactions) ? parsed.transactions : defaultState.transactions,
+    chatMessages: Array.isArray(parsed.chatMessages) ? parsed.chatMessages : defaultState.chatMessages,
+    settings: { ...defaultState.settings, ...(parsed.settings || {}) },
+    serverUpdatedAt: typeof parsed.serverUpdatedAt === 'number' ? parsed.serverUpdatedAt : 0,
+    syncRevision: typeof parsed.syncRevision === 'number' ? parsed.syncRevision : undefined
+  };
+}
+
 export function loadAppState(): AppState {
   if (typeof window === 'undefined') {
     return getInitialDefaultState();
@@ -397,22 +452,11 @@ export function loadAppState(): AppState {
       return initial;
     }
 
-    const parsed = JSON.parse(raw) as Partial<AppState>;
-    const defaultState = getInitialDefaultState();
-
-    const loaded: AppState = {
-      activities: Array.isArray(parsed.activities) && parsed.activities.length > 0 ? parsed.activities : defaultState.activities,
-      habits: Array.isArray(parsed.habits) && parsed.habits.length > 0 ? parsed.habits : defaultState.habits,
-      reminders: Array.isArray(parsed.reminders) ? parsed.reminders : defaultState.reminders,
-      healthChecks: Array.isArray(parsed.healthChecks) && parsed.healthChecks.length > 0 ? parsed.healthChecks : defaultState.healthChecks,
-      transactions: Array.isArray(parsed.transactions) ? parsed.transactions : defaultState.transactions,
-      chatMessages: Array.isArray(parsed.chatMessages) && parsed.chatMessages.length > 0 ? parsed.chatMessages : defaultState.chatMessages,
-      settings: { ...defaultState.settings, ...(parsed.settings || {}) },
-      // If migrated from legacy, reset serverUpdatedAt to 0 so fresh server data can sync
-      serverUpdatedAt: isLegacy ? 0 : (typeof parsed.serverUpdatedAt === 'number' ? parsed.serverUpdatedAt : 0)
-    };
+    const parsed = JSON.parse(raw);
+    const loaded = normalizeAppState(parsed);
 
     if (isLegacy) {
+      loaded.serverUpdatedAt = 0;
       saveAppState(loaded);
     }
 
