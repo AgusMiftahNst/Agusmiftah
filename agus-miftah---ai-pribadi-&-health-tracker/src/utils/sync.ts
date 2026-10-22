@@ -99,10 +99,9 @@ export async function fetchServerState(): Promise<AppState | null> {
   return result.state;
 }
 
-// Push state to Cloud Firestore (with auto retry queue and local server sync)
 export async function pushServerState(
   state: AppState
-): Promise<{ success: boolean; serverUpdatedAt?: number; syncRevision?: number }> {
+): Promise<{ success: boolean; serverUpdatedAt?: number; syncRevision?: number; error?: string }> {
   if (isPushing) {
     pendingStateToPush = state;
     return { success: true };
@@ -112,24 +111,28 @@ export async function pushServerState(
   try {
     const newTimestamp = Date.now();
     const newRevision = (state.syncRevision || 0) + 1;
-    const payload = {
+    const rawPayload = {
       ...state,
       serverUpdatedAt: newTimestamp,
       syncRevision: newRevision
     };
 
-    // 1. Save to Cloud Firestore
+    // CRITICAL FIX: Firestore strictly forbids any 'undefined' values in document payloads!
+    // JSON.parse(JSON.stringify(...)) cleanly strips all undefined keys without altering valid values.
+    const cleanPayload = JSON.parse(JSON.stringify(rawPayload));
+
+    // 1. Save directly to Cloud Firestore
     const docRef = doc(db, FIRESTORE_COLLECTION, FIRESTORE_DOC_ID);
-    await setDoc(docRef, payload, { merge: true });
+    await setDoc(docRef, cleanPayload, { merge: true });
 
     lastServerTimestamp = newTimestamp;
     lastSyncRevision = newRevision;
 
-    // 2. Also background sync to local server if available
+    // 2. Also background sync to local server if available (e.g. dev mode)
     fetch('/api/state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(cleanPayload)
     }).catch(() => {});
 
     return {
@@ -137,13 +140,14 @@ export async function pushServerState(
       serverUpdatedAt: newTimestamp,
       syncRevision: newRevision
     };
-  } catch (err) {
-    console.warn('Push to Firestore failed, attempting local server fallback:', err);
+  } catch (err: any) {
+    console.error('Push to Cloud Firestore error:', err);
     try {
+      const cleanFallback = JSON.parse(JSON.stringify(state));
       const res = await fetch('/api/state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(state)
+        body: JSON.stringify(cleanFallback)
       });
       if (res.ok) {
         const data = await res.json();
@@ -154,7 +158,7 @@ export async function pushServerState(
         };
       }
     } catch {}
-    return { success: false };
+    return { success: false, error: err?.message || 'Gagal menyimpan ke Cloud Firestore' };
   } finally {
     isPushing = false;
     if (pendingStateToPush) {
