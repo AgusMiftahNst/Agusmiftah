@@ -12,12 +12,14 @@ import {
   CheckCircle2,
   Filter,
   Bell,
-  X
+  X,
+  RotateCcw
 } from 'lucide-react';
 import { ActivityItem } from '../types';
 import { getActivityUrgency, getTodayDateString, formatDateIndonesian } from '../utils/storage';
 import { sound } from '../utils/audio';
 import { EditActivityModal } from './EditActivityModal';
+import { AutoLinkText, QuickUrlButtons } from './AutoLinkText';
 
 interface ActivitiesViewProps {
   activities: ActivityItem[];
@@ -295,14 +297,29 @@ export function ActivitiesView({
                     </h4>
 
                     {act.notes && (
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg">
-                        {act.notes}
-                      </p>
+                      <div className="mt-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                        <div className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed break-words whitespace-pre-wrap">
+                          <AutoLinkText text={act.notes} />
+                        </div>
+                        <QuickUrlButtons text={act.notes} />
+                      </div>
                     )}
                   </div>
 
-                  {/* Actions: Edit & Delete */}
+                  {/* Actions: Revert, Edit & Delete */}
                   <div className="flex items-center gap-1 shrink-0">
+                    {act.completed && (
+                      <button
+                        onClick={() => onToggleActivity(act.id)}
+                        className="text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 p-1.5 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-950/50 transition-colors flex items-center gap-1"
+                        title="Kembalikan ke belum selesai (isi alasan)"
+                        aria-label="Kembalikan ke belum selesai"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        <span className="hidden sm:inline text-[11px] font-semibold">Batal</span>
+                      </button>
+                    )}
+
                     <button
                       onClick={() => setEditingActivity(act)}
                       className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -464,18 +481,20 @@ export function ActivitiesView({
                 </div>
               </div>
 
-              {/* Notes */}
+              {/* Notes & Links */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Catatan Tambahan (Opsional)
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
+                  <span>Catatan / Link Pekerjaan (Opsional)</span>
+                  <span className="text-[10px] text-slate-400 font-normal">Google Docs, Drive, web, dll</span>
                 </label>
                 <textarea
                   rows={2}
-                  placeholder="Detail link, nomor telepon, atau catatan penting..."
+                  placeholder="Contoh: Kerjakan di https://docs.google.com/... atau catatan detail tugas"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                 />
+                {notes && <QuickUrlButtons text={notes} />}
               </div>
 
               {/* Submit Buttons */}
