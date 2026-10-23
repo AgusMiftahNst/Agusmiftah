@@ -1,9 +1,20 @@
-export type CategoryType = 'kesehatan' | 'keuangan' | 'harian';
+export type CategoryType = 'kesehatan' | 'keuangan' | 'harian' | 'ibadah';
+
+export type AppFeatureTab = 'home' | 'activities' | 'health' | 'finance' | 'reminders' | 'ai';
+
+export interface AccessProfile {
+  id: string;
+  name: string; // e.g. 'Master (Pemilik)', 'Kerja / Asisten', 'Keluarga'
+  code: string; // alphanumeric passcode, case-insensitive or exact
+  isMaster?: boolean; // Master has full access and can manage security/passcodes
+  allowedTabs: AppFeatureTab[];
+  createdAt: number;
+}
 
 export interface ActivityItem {
   id: string;
   title: string;
-  category: 'kerjaan' | 'pribadi' | 'kesehatan' | 'keuangan' | 'belajar' | 'lainnya';
+  category: 'kerjaan' | 'pribadi' | 'kesehatan' | 'keuangan' | 'belajar' | 'ibadah' | 'lainnya';
   dueDate: string; // 'YYYY-MM-DD'
   dueTime?: string; // 'HH:MM'
   completed: boolean;
@@ -11,6 +22,8 @@ export interface ActivityItem {
   notes?: string;
   createdAt: number;
   completedAt?: number;
+  activityType?: 'deadline' | 'rutin_harian' | 'rutin_bulanan';
+  routineCompletions?: Record<string, boolean>; // 'YYYY-MM-DD' => true for daily, 'YYYY-MM' => true for monthly
 }
 
 export interface HabitItem {
@@ -57,6 +70,20 @@ export interface TransactionLog {
   amount: number;
   type: 'pengeluaran' | 'pemasukan';
   category?: string;
+  wallet?: string; // 'BCA' | 'Mandiri' | 'BRI' | 'BNI' | 'DANA' | 'OVO' | 'GoPay' | 'ShopeePay' | 'Tunai'
+}
+
+export interface FinancialGoal {
+  id: string;
+  title: string;
+  targetAmount: number;
+  currentAmount: number;
+  targetDate?: string; // 'YYYY-MM-DD'
+  category?: string;
+  notes?: string;
+  wallet?: string;
+  isCompleted?: boolean;
+  createdAt: number;
 }
 
 export interface ChatMessage {
@@ -70,6 +97,11 @@ export interface UserSettings {
   userName: string;
   soundEnabled: boolean;
   notificationsEnabled: boolean;
+  displayMode?: 'auto' | 'mobile' | 'laptop';
+  appPin?: string;
+  isPinRequired?: boolean;
+  notifyHoursBefore?: number;
+  accessProfiles?: AccessProfile[];
 }
 
 export interface AppState {
@@ -78,8 +110,9 @@ export interface AppState {
   reminders: ReminderItem[];
   healthChecks: HealthCheckRecord[];
   transactions: TransactionLog[];
+  financialTargets?: FinancialGoal[];
   chatMessages: ChatMessage[];
   settings: UserSettings;
   serverUpdatedAt?: number;
+  syncRevision?: number;
 }
-
