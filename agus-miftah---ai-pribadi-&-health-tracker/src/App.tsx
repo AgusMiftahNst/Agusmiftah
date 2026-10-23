@@ -17,6 +17,8 @@ import { SyncModal } from './components/SyncModal';
 import { ConfirmDeleteModal } from './components/ConfirmDeleteModal';
 import { ConfirmCompleteModal } from './components/ConfirmCompleteModal';
 import { RevertActivityModal } from './components/RevertActivityModal';
+import { LockScreen } from './components/LockScreen';
+import { PasscodeManagerModal } from './components/PasscodeManagerModal';
 import {
   AppState,
   ActivityItem,
@@ -24,7 +26,10 @@ import {
   ReminderItem,
   HealthCheckRecord,
   TransactionLog,
-  ChatMessage
+  FinancialGoal,
+  ChatMessage,
+  AccessProfile,
+  AppFeatureTab
 } from './types';
 import {
   loadAppState,
@@ -32,7 +37,8 @@ import {
   normalizeAppState,
   getTodayDateString,
   formatDateIndonesian,
-  formatRupiah
+  formatRupiah,
+  DEFAULT_ACCESS_PROFILES
 } from './utils/storage';
 import {
   fetchServerStateDetailed,
@@ -44,7 +50,7 @@ import {
 } from './utils/sync';
 import { generateContextualJarvisReply } from './utils/jarvisBrain';
 import { sound } from './utils/audio';
-import { sendLocalNotification } from './utils/notifications';
+import { sendLocalNotification, requestNotificationPermission, vibrateMobile } from './utils/notifications';
 
 interface DeleteConfirmTarget {
   type: 'activity' | 'healthCheck' | 'transaction' | 'reminder';
@@ -61,11 +67,19 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<SyncStateStatus>('synced');
   const [isHealthCheckOpen, setIsHealthCheckOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [isPasscodeManagerOpen, setIsPasscodeManagerOpen] = useState(false);
+  const [isLocked, setIsLocked] = useState<boolean>(() => Boolean(loadAppState()?.settings?.isPinRequired));
+  const [activeProfile, setActiveProfile] = useState<AccessProfile | null>(() => {
+    const initial = loadAppState();
+    const profiles = initial.settings?.accessProfiles || [];
+    return profiles.find((p) => p.isMaster) || profiles[0] || DEFAULT_ACCESS_PROFILES[0];
+  });
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<DeleteConfirmTarget | null>(null);
   const [completeConfirmActivity, setCompleteConfirmActivity] = useState<ActivityItem | null>(null);
   const [revertConfirmActivity, setRevertConfirmActivity] = useState<ActivityItem | null>(null);
   const [syncToast, setSyncToast] = useState<string | null>(null);
   const [lastNotifiedTime, setLastNotifiedTime] = useState<string>('');
+  const notifiedDeadlinesRef = useRef<Set<string>>(new Set());
 
   // Dark mode state
   const [isDark, setIsDark] = useState<boolean>(() => {
@@ -302,33 +316,73 @@ export default function App() {
 
   // Background reminder scheduler
   useEffect(() => {
-    const checkReminders = () => {
+    const checkAlarmsAndDeadlines = () => {
       const now = new Date();
       const hours = String(now.getHours()).padStart(2, '0');
       const minutes = String(now.getMinutes()).padStart(2, '0');
       const timeStr = `${hours}:${minutes}`;
       const dayIndex = now.getDay();
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-      if (timeStr === lastNotifiedTime) return;
+      // 1. Routine Reminders Check
+      if (timeStr !== lastNotifiedTime) {
+        const matched = appState.reminders.find(
+          (r) => r.enabled && r.time === timeStr && r.days.includes(dayIndex)
+        );
 
-      const matched = appState.reminders.find(
-        (r) => r.enabled && r.time === timeStr && r.days.includes(dayIndex)
-      );
-
-      if (matched) {
-        setLastNotifiedTime(timeStr);
-        if (appState.settings.soundEnabled) {
-          sound.playReminderAlert();
+        if (matched) {
+          setLastNotifiedTime(timeStr);
+          if (appState.settings.soundEnabled) {
+            sound.playReminderAlert();
+          }
+          vibrateMobile([250, 100, 250]);
+          sendLocalNotification(`Agus Miftah: ${matched.title}`, {
+            body: matched.note || 'Waktunya menjaga kesehatanmu hari ini!',
+            vibrate: true
+          });
+          setSyncToast(`⏰ Pengingat: ${matched.title}`);
+          setTimeout(() => setSyncToast(null), 5000);
         }
-        sendLocalNotification(`Agus Miftah: ${matched.title}`, {
-          body: matched.note || 'Waktunya menjaga kesehatanmu hari ini!'
-        });
       }
+
+      // 2. Activity Deadlines Check (1 hour / 60 minutes prior to deadline on HP & Laptop)
+      const notifyWindowMinutes = (appState.settings.notifyHoursBefore || 1) * 60;
+      (appState.activities || []).forEach((act) => {
+        if (
+          !act.completed &&
+          (!act.activityType || act.activityType === 'deadline') &&
+          act.dueDate === todayDate &&
+          act.dueTime
+        ) {
+          const [dh, dm] = act.dueTime.split(':').map(Number);
+          if (!isNaN(dh) && !isNaN(dm)) {
+            const dueMins = dh * 60 + dm;
+            const diffMins = dueMins - currentMinutes;
+            const notificationKey = `${act.id}-${todayDate}-${act.dueTime}`;
+
+            // Notify if within 60 minutes (e.g. 1 hour before) and not yet notified
+            if (diffMins >= 0 && diffMins <= notifyWindowMinutes && !notifiedDeadlinesRef.current.has(notificationKey)) {
+              notifiedDeadlinesRef.current.add(notificationKey);
+              if (appState.settings.soundEnabled) {
+                sound.playReminderAlert();
+              }
+              vibrateMobile([300, 150, 300]);
+              const timeNotice = diffMins === 0 ? 'sekarang juga' : `${diffMins} menit lagi (pukul ${act.dueTime})`;
+              sendLocalNotification(`🔔 Deadline Kegiatan: ${act.title}`, {
+                body: `Tenggat waktu ${timeNotice}. Segera tuntaskan tugas ini!`,
+                vibrate: true
+              });
+              setSyncToast(`🔔 Pengingat Deadline: ${act.title} (${timeNotice})`);
+              setTimeout(() => setSyncToast(null), 7000);
+            }
+          }
+        }
+      });
     };
 
-    const interval = window.setInterval(checkReminders, 25000);
+    const interval = window.setInterval(checkAlarmsAndDeadlines, 20000);
     return () => clearInterval(interval);
-  }, [appState.reminders, appState.settings.soundEnabled, lastNotifiedTime]);
+  }, [appState.reminders, appState.activities, appState.settings.soundEnabled, appState.settings.notifyHoursBefore, lastNotifiedTime, todayDate]);
 
   // Activity mutations
   const handleToggleActivity = (id: string) => {
@@ -353,9 +407,37 @@ export default function App() {
     }));
   };
 
+  const handleToggleRoutine = (id: string) => {
+    const currentMonth = todayDate.slice(0, 7);
+    updateAndSyncState((prev) => {
+      const activities = (prev.activities || []).map((a) => {
+        if (a.id !== id) return a;
+        const comps = a.routineCompletions || {};
+        const key = a.activityType === 'rutin_bulanan' ? currentMonth : todayDate;
+        const isDone = Boolean(comps[key]);
+        return {
+          ...a,
+          routineCompletions: {
+            ...comps,
+            [key]: !isDone
+          }
+        };
+      });
+      return { ...prev, activities };
+    });
+    if (appState.settings.soundEnabled) {
+      sound.playSuccess();
+    }
+  };
+
   const requestToggleActivity = (id: string) => {
     const act = (appState.activities || []).find((a) => a.id === id);
     if (!act) return;
+
+    if (act.activityType === 'rutin_harian' || act.activityType === 'rutin_bulanan') {
+      handleToggleRoutine(id);
+      return;
+    }
 
     if (!act.completed) {
       // Prompt user confirmation before marking completed
@@ -494,6 +576,135 @@ export default function App() {
       ...prev,
       transactions: prev.transactions.filter((t) => t.id !== id)
     }));
+  };
+
+  // Financial Target mutations
+  const handleAddFinancialTarget = (newTarget: Omit<FinancialGoal, 'id' | 'createdAt'>) => {
+    const target: FinancialGoal = {
+      ...newTarget,
+      id: `goal-${Date.now()}`,
+      createdAt: Date.now()
+    };
+    updateAndSyncState((prev) => ({
+      ...prev,
+      financialTargets: [target, ...(prev.financialTargets || [])]
+    }));
+  };
+
+  const handleUpdateFinancialTarget = (updated: FinancialGoal) => {
+    updateAndSyncState((prev) => ({
+      ...prev,
+      financialTargets: (prev.financialTargets || []).map((g) => (g.id === updated.id ? updated : g))
+    }));
+  };
+
+  const handleDeleteFinancialTarget = (id: string) => {
+    updateAndSyncState((prev) => ({
+      ...prev,
+      financialTargets: (prev.financialTargets || []).filter((g) => g.id !== id)
+    }));
+  };
+
+  // Multi-Passcode Security & Profile Access Control
+  const handleSaveAccessProfiles = (newProfiles: AccessProfile[], isRequired: boolean) => {
+    const master = newProfiles.find((p) => p.isMaster) || newProfiles[0];
+    updateAndSyncState((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        isPinRequired: isRequired,
+        appPin: master.code,
+        accessProfiles: newProfiles
+      }
+    }));
+
+    // Update active profile
+    const currentId = activeProfile?.id;
+    const updatedActive = newProfiles.find((p) => p.id === currentId) || master;
+    setActiveProfile(updatedActive);
+
+    // Redirect to allowed tab if currently on disallowed tab
+    if (updatedActive.allowedTabs && !updatedActive.allowedTabs.includes(currentTab as any)) {
+      setCurrentTab(updatedActive.allowedTabs[0] || 'home');
+    }
+
+    setSyncToast(
+      isRequired
+        ? `Kunci Password Aktif (${newProfiles.length} profil terkonfigurasi)`
+        : 'Kunci Masuk Aplikasi dinonaktifkan.'
+    );
+    setTimeout(() => setSyncToast(null), 4000);
+  };
+
+  const handleResetSecurityToDefault = () => {
+    updateAndSyncState((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        appPin: 'agus123',
+        isPinRequired: true,
+        accessProfiles: DEFAULT_ACCESS_PROFILES
+      }
+    }));
+    setActiveProfile(DEFAULT_ACCESS_PROFILES[0]);
+    setIsLocked(false);
+    setSyncToast('Password Master di-reset ke: agus123 (Akses Penuh)');
+    setTimeout(() => setSyncToast(null), 4000);
+  };
+
+  const handleUnlock = (profile: AccessProfile) => {
+    setActiveProfile(profile);
+    setIsLocked(false);
+    if (profile.allowedTabs && !profile.allowedTabs.includes(currentTab as any)) {
+      setCurrentTab(profile.allowedTabs[0] || 'home');
+    }
+  };
+
+  const handleSelectTab = (tab: MainTabType) => {
+    if (activeProfile && activeProfile.allowedTabs && !activeProfile.allowedTabs.includes(tab as any)) {
+      sound.playBreathCue(true);
+      setSyncToast(`Menu ini tidak diizinkan untuk profil "${activeProfile.name}".`);
+      setTimeout(() => setSyncToast(null), 3000);
+      return;
+    }
+    setCurrentTab(tab);
+  };
+
+  const handleChangeDisplayMode = (mode: 'auto' | 'mobile' | 'laptop') => {
+    updateAndSyncState((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        displayMode: mode
+      }
+    }));
+    if (appState.settings.soundEnabled) {
+      sound.playSuccess();
+    }
+    const modeLabel = mode === 'laptop' ? 'Mode Laptop (Layar Lebar)' : mode === 'mobile' ? 'Mode HP (Compact)' : 'Mode Otomatis';
+    setSyncToast(`Tampilan diubah ke ${modeLabel}`);
+    setTimeout(() => setSyncToast(null), 3000);
+  };
+
+  const handleRequestNotifications = async () => {
+    const granted = await requestNotificationPermission();
+    if (granted) {
+      updateAndSyncState((prev) => ({
+        ...prev,
+        settings: {
+          ...prev.settings,
+          notificationsEnabled: true
+        }
+      }));
+      sendLocalNotification('JARVIS Aktif', {
+        body: 'Notifikasi deadline dan pengingat siap dikirim ke HP Anda!'
+      });
+      vibrateMobile([200, 100, 200]);
+      setSyncToast('Notifikasi di HP berhasil diaktifkan! 🔔');
+    } else {
+      setSyncToast('Izin notifikasi belum diaktifkan pada browser/HP.');
+    }
+    setTimeout(() => setSyncToast(null), 4000);
   };
 
   // Reminder mutations
@@ -719,11 +930,24 @@ export default function App() {
         onToggleDark={handleToggleDark}
         soundEnabled={appState.settings.soundEnabled}
         onToggleSound={handleToggleSound}
-        onOpenAIChat={() => setCurrentTab('ai')}
+        onOpenAIChat={() => handleSelectTab('ai')}
+        displayMode={appState.settings.displayMode || 'auto'}
+        onChangeDisplayMode={handleChangeDisplayMode}
+        onLockApp={() => setIsLocked(true)}
+        onOpenPasscodeManager={() => setIsPasscodeManagerOpen(true)}
+        onRequestNotifications={handleRequestNotifications}
+        notificationsEnabled={Boolean(appState.settings.notificationsEnabled)}
+        activeProfile={activeProfile}
       />
 
-      {/* Main Container - Optimized for mobile view */}
-      <main className="flex-1 max-w-lg w-full mx-auto px-3.5 pt-3 pb-20">
+      {/* Main Container - Optimized for Mobile & Laptop Wide Views */}
+      <main className={`flex-1 w-full mx-auto px-3.5 sm:px-6 pt-3 pb-20 transition-all ${
+        (appState.settings.displayMode || 'auto') === 'laptop'
+          ? 'max-w-6xl'
+          : (appState.settings.displayMode || 'auto') === 'mobile'
+          ? 'max-w-lg'
+          : 'max-w-lg lg:max-w-6xl'
+      }`}>
         {currentTab === 'home' && (
           <HomeView
             todayDate={todayDate}
@@ -731,21 +955,27 @@ export default function App() {
             habits={appState.habits}
             healthChecks={appState.healthChecks}
             transactions={appState.transactions}
+            financialTargets={appState.financialTargets || []}
             reminders={appState.reminders}
             onToggleActivity={requestToggleActivity}
+            onToggleRoutine={handleToggleRoutine}
             onToggleHabit={handleToggleHabit}
             onIncrementHabit={handleIncrementHabit}
             onOpenHealthModal={() => setIsHealthCheckOpen(true)}
-            onOpenTransactionModal={() => setCurrentTab('finance')}
-            onNavigateTab={(tab) => setCurrentTab(tab)}
+            onOpenTransactionModal={() => handleSelectTab('finance')}
+            onNavigateTab={(tab) => handleSelectTab(tab)}
             soundEnabled={appState.settings.soundEnabled}
+            displayMode={appState.settings.displayMode || 'auto'}
+            allowedTabs={activeProfile?.allowedTabs}
           />
         )}
 
         {currentTab === 'activities' && (
           <ActivitiesView
             activities={appState.activities || []}
+            todayDate={todayDate}
             onToggleActivity={requestToggleActivity}
+            onToggleRoutine={handleToggleRoutine}
             onAddActivity={handleAddActivity}
             onUpdateActivity={handleUpdateActivity}
             onDeleteActivity={requestDeleteActivity}
@@ -771,9 +1001,13 @@ export default function App() {
         {currentTab === 'finance' && (
           <SimpleFinanceView
             transactions={appState.transactions}
+            financialTargets={appState.financialTargets || []}
             todayDate={todayDate}
             onAddTransaction={handleAddTransaction}
             onDeleteTransaction={requestDeleteTransaction}
+            onAddFinancialTarget={handleAddFinancialTarget}
+            onUpdateFinancialTarget={handleUpdateFinancialTarget}
+            onDeleteFinancialTarget={handleDeleteFinancialTarget}
             soundEnabled={appState.settings.soundEnabled}
           />
         )}
@@ -846,11 +1080,30 @@ export default function App() {
         onSave={handleSaveHealthCheck}
       />
 
-      {/* Mobile-First Bottom Navigation */}
+      {/* Security & Multi-Passcode Profile Access Control Modal */}
+      <PasscodeManagerModal
+        isOpen={isPasscodeManagerOpen}
+        accessProfiles={appState.settings.accessProfiles || []}
+        isPinRequired={Boolean(appState.settings.isPinRequired)}
+        onSave={handleSaveAccessProfiles}
+        onClose={() => setIsPasscodeManagerOpen(false)}
+      />
+
+      {/* Security Passcode Gate Screen */}
+      <LockScreen
+        isLocked={isLocked}
+        accessProfiles={appState.settings.accessProfiles || []}
+        savedPin={appState.settings.appPin || 'agus123'}
+        onUnlock={handleUnlock}
+        onResetToDefault={handleResetSecurityToDefault}
+      />
+
+      {/* Mobile-First Bottom Navigation with role-based tab filtering */}
       <MobileBottomNav
         currentTab={currentTab}
-        onSelectTab={setCurrentTab}
+        onSelectTab={handleSelectTab}
         pendingActivitiesCount={pendingActivitiesCount}
+        allowedTabs={activeProfile?.allowedTabs}
       />
     </div>
   );
