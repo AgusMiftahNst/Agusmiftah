@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Edit3, Calendar, Clock, Tag, AlertCircle, X, Check } from 'lucide-react';
 import { ActivityItem } from '../types';
 import { getTodayDateString } from '../utils/storage';
+import { QuickUrlButtons } from './AutoLinkText';
 
 interface EditActivityModalProps {
   isOpen: boolean;
@@ -185,18 +186,20 @@ export function EditActivityModal({
             </div>
           </div>
 
-          {/* Catatan Tambahan */}
+          {/* Catatan Tambahan & Link */}
           <div className="space-y-1.5">
-            <label className="font-semibold text-slate-700 dark:text-slate-200">
-              Catatan / Detail Tambahan
+            <label className="font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-between">
+              <span>Catatan / Link Pekerjaan</span>
+              <span className="text-[10px] text-slate-400 font-normal">Google Docs, Drive, web, dll</span>
             </label>
             <textarea
               rows={3}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Tambahkan detail, tautan file, atau catatan penting..."
+              placeholder="Contoh: Kerjakan di https://docs.google.com/... atau catatan penting"
               className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-xs resize-none"
             />
+            {notes && <QuickUrlButtons text={notes} />}
           </div>
 
           {/* Action buttons */}
