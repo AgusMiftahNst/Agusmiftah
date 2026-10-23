@@ -568,6 +568,17 @@ export function getInitialDefaultState(): AppState {
       routineCompletions: a.routineCompletions && typeof a.routineCompletions === 'object' ? a.routineCompletions : {}
     }));
 
+    // Ensure default routine activities are present if user doesn't have any routine activities yet
+    const hasAnyRoutine = activities.some(
+      (a) => a.activityType === 'rutin_harian' || a.activityType === 'rutin_bulanan'
+    );
+    if (!hasAnyRoutine) {
+      const defaultRoutines = defaultState.activities.filter(
+        (a) => a.activityType === 'rutin_harian' || a.activityType === 'rutin_bulanan'
+      );
+      activities.unshift(...defaultRoutines);
+    }
+
     const accessProfiles = normalizeAccessProfiles(
       parsed.settings?.accessProfiles,
       parsed.settings?.appPin
