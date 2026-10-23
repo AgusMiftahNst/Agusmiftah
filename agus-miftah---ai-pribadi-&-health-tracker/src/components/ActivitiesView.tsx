@@ -13,7 +13,11 @@ import {
   Filter,
   Bell,
   X,
-  RotateCcw
+  RotateCcw,
+  Sparkles,
+  Repeat,
+  Moon,
+  CalendarRange
 } from 'lucide-react';
 import { ActivityItem } from '../types';
 import { getActivityUrgency, getTodayDateString, formatDateIndonesian } from '../utils/storage';
@@ -23,7 +27,9 @@ import { AutoLinkText, QuickUrlButtons } from './AutoLinkText';
 
 interface ActivitiesViewProps {
   activities: ActivityItem[];
+  todayDate: string;
   onToggleActivity: (id: string) => void;
+  onToggleRoutine?: (id: string) => void;
   onAddActivity: (activity: Omit<ActivityItem, 'id' | 'createdAt'>) => void;
   onUpdateActivity: (activity: ActivityItem) => void;
   onDeleteActivity: (id: string) => void;
@@ -33,31 +39,50 @@ interface ActivitiesViewProps {
 
 export function ActivitiesView({
   activities,
+  todayDate,
   onToggleActivity,
+  onToggleRoutine,
   onAddActivity,
   onUpdateActivity,
   onDeleteActivity,
   onNavigateToReminders,
   soundEnabled
 }: ActivitiesViewProps) {
+  // Main view tab: 'deadline' vs 'rutin'
+  const [activeTab, setActiveTab] = useState<'deadline' | 'rutin'>('deadline');
+
+  // Filters for Deadline
   const [filterStatus, setFilterStatus] = useState<'pending' | 'completed' | 'all'>('pending');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
+  // Filters for Rutin
+  const [routineFilter, setRoutineFilter] = useState<'all' | 'harian' | 'bulanan' | 'ibadah'>('all');
+
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<ActivityItem | null>(null);
 
   // New activity form state
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<ActivityItem['category']>('kerjaan');
+  const [activityType, setActivityType] = useState<ActivityItem['activityType']>('deadline');
   const [dueDate, setDueDate] = useState(getTodayDateString(0));
   const [dueTime, setDueTime] = useState('');
   const [priority, setPriority] = useState<ActivityItem['priority']>('sedang');
   const [notes, setNotes] = useState('');
 
-  const pendingCount = activities.filter((a) => !a.completed).length;
-  const completedCount = activities.filter((a) => a.completed).length;
+  const currentMonth = todayDate.slice(0, 7); // 'YYYY-MM'
 
-  // Filter activities
-  const filteredActivities = activities
+  // Separate deadline vs routine
+  const deadlineActivities = activities.filter((a) => !a.activityType || a.activityType === 'deadline');
+  const routineActivities = activities.filter(
+    (a) => a.activityType === 'rutin_harian' || a.activityType === 'rutin_bulanan'
+  );
+
+  const pendingDeadlineCount = deadlineActivities.filter((a) => !a.completed).length;
+  const completedDeadlineCount = deadlineActivities.filter((a) => a.completed).length;
+
+  // Filtered Deadline Activities
+  const filteredDeadlines = deadlineActivities
     .filter((a) => {
       if (filterStatus === 'pending') return !a.completed;
       if (filterStatus === 'completed') return a.completed;
@@ -68,12 +93,17 @@ export function ActivitiesView({
       return a.category === selectedCategory;
     })
     .sort((a, b) => {
-      // Pending first, then by dueDate ascending
-      if (a.completed !== b.completed) {
-        return a.completed ? 1 : -1;
-      }
+      if (a.completed !== b.completed) return a.completed ? 1 : -1;
       return a.dueDate.localeCompare(b.dueDate);
     });
+
+  // Filtered Routine Activities
+  const filteredRoutines = routineActivities.filter((a) => {
+    if (routineFilter === 'harian') return a.activityType === 'rutin_harian';
+    if (routineFilter === 'bulanan') return a.activityType === 'rutin_bulanan';
+    if (routineFilter === 'ibadah') return a.category === 'ibadah';
+    return true;
+  });
 
   const handleCreateActivity = (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,11 +112,13 @@ export function ActivitiesView({
     onAddActivity({
       title: title.trim(),
       category,
+      activityType,
       dueDate: dueDate || getTodayDateString(0),
       dueTime: dueTime ? dueTime : undefined,
       completed: false,
       priority,
-      notes: notes.trim() ? notes.trim() : undefined
+      notes: notes.trim() ? notes.trim() : undefined,
+      routineCompletions: {}
     });
 
     if (soundEnabled) sound.playSuccess();
@@ -94,6 +126,7 @@ export function ActivitiesView({
     // Reset form
     setTitle('');
     setCategory('kerjaan');
+    setActivityType('deadline');
     setDueDate(getTodayDateString(0));
     setDueTime('');
     setPriority('sedang');
@@ -103,6 +136,8 @@ export function ActivitiesView({
 
   const getCategoryColor = (cat: ActivityItem['category']) => {
     switch (cat) {
+      case 'ibadah':
+        return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300/80';
       case 'kerjaan':
         return 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200/60';
       case 'kesehatan':
@@ -113,379 +148,644 @@ export function ActivitiesView({
         return 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200/60';
       case 'pribadi':
       default:
-        return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200/60';
+        return 'bg-teal-50 text-teal-700 dark:bg-teal-950/60 dark:text-teal-300 border-teal-200/60';
     }
+  };
+
+  const isRoutineCompleted = (act: ActivityItem): boolean => {
+    const comps = act.routineCompletions || {};
+    if (act.activityType === 'rutin_bulanan') {
+      return Boolean(comps[currentMonth]);
+    }
+    return Boolean(comps[todayDate]);
   };
 
   return (
     <div className="space-y-4 pb-6">
-      {/* Header bar with summary & Add button */}
+      {/* 1. Header bar with summary & Add button */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 shadow-xs">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <CheckSquare className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-              Aktifitas & Deadline
+              Aktifitas & Kegiatan
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              {pendingCount > 0 ? (
+              {pendingDeadlineCount > 0 ? (
                 <span>
-                  <strong className="text-rose-600 dark:text-rose-400 font-bold">{pendingCount}</strong> kegiatan belum dikerjakan
+                  <strong className="text-rose-600 dark:text-rose-400 font-bold">{pendingDeadlineCount}</strong> tugas deadline menunggu diselesaikan
                 </span>
               ) : (
-                <span className="text-emerald-600 dark:text-emerald-400 font-medium">Semua kegiatan sudah selesai! 🎉</span>
+                <span className="text-emerald-600 dark:text-emerald-400 font-medium">Semua deadline beres! 🎉</span>
               )}
             </p>
           </div>
 
           <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="px-3 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 rounded-xl shadow-xs transition-all flex items-center gap-1.5"
+            onClick={() => {
+              setActivityType(activeTab === 'rutin' ? 'rutin_harian' : 'deadline');
+              setIsAddModalOpen(true);
+            }}
+            className="px-3.5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 rounded-xl shadow-xs flex items-center gap-1.5 transition-all min-h-[40px]"
           >
             <Plus className="w-4 h-4" />
-            Tambah
+            Tambah Kegiatan
           </button>
-        </div>
-
-        {/* Status Filter Tabs */}
-        <div className="flex items-center gap-1.5 mt-3.5 pt-3 border-t border-slate-100 dark:border-slate-800">
-          <button
-            onClick={() => setFilterStatus('pending')}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all text-center ${
-              filterStatus === 'pending'
-                ? 'bg-indigo-600 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            Belum Selesai ({pendingCount})
-          </button>
-          <button
-            onClick={() => setFilterStatus('all')}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all text-center ${
-              filterStatus === 'all'
-                ? 'bg-indigo-600 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            Semua ({activities.length})
-          </button>
-          <button
-            onClick={() => setFilterStatus('completed')}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all text-center ${
-              filterStatus === 'completed'
-                ? 'bg-indigo-600 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            Selesai ({completedCount})
-          </button>
-        </div>
-
-        {/* Category Pills (horizontal scrollable on mobile) */}
-        <div className="flex items-center gap-1.5 mt-2.5 overflow-x-auto no-scrollbar py-1">
-          {[
-            { id: 'all', label: 'Semua Kategori' },
-            { id: 'kerjaan', label: 'Kerjaan' },
-            { id: 'kesehatan', label: 'Kesehatan' },
-            { id: 'keuangan', label: 'Keuangan' },
-            { id: 'belajar', label: 'Belajar' },
-            { id: 'pribadi', label: 'Pribadi' }
-          ].map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
-              className={`px-2.5 py-1 text-[11px] font-medium rounded-full shrink-0 transition-colors ${
-                selectedCategory === cat.id
-                  ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 font-semibold'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
-              }`}
-            >
-              {cat.label}
-            </button>
-          ))}
         </div>
       </div>
 
-      {/* Activities List */}
-      <div className="space-y-2.5">
-        {filteredActivities.length === 0 ? (
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-8 text-center shadow-xs">
-            <CheckCircle2 className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto mb-2.5" />
-            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
-              {filterStatus === 'pending'
-                ? 'Tidak ada kegiatan yang tertunda'
-                : 'Belum ada daftar kegiatan'}
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs mx-auto">
-              {filterStatus === 'pending'
-                ? 'Hebat! Semua deadline kegiatanmu sudah diselesaikan atau belum ada yang dicatat.'
-                : 'Tambah kegiatan baru agar deadline tugas dan rencanamu selalu teringat.'}
-            </p>
-            <button
-              onClick={() => setIsAddModalOpen(true)}
-              className="mt-4 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl inline-flex items-center gap-1.5 active:scale-95 transition-all shadow-xs"
-            >
-              <Plus className="w-4 h-4" />
-              Catat Kegiatan Baru
-            </button>
-          </div>
-        ) : (
-          filteredActivities.map((act) => {
-            const urgency = getActivityUrgency(act.dueDate, act.dueTime, act.completed);
+      {/* 2. Sub-Tab Pemisah: Deadline Tugas vs Aktifitas Rutin */}
+      <div className="grid grid-cols-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-800">
+        <button
+          onClick={() => setActiveTab('deadline')}
+          className={`py-2 px-3 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 ${
+            activeTab === 'deadline'
+              ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+          }`}
+        >
+          <Clock className="w-4 h-4" />
+          <span>Deadline Tugas ({deadlineActivities.length})</span>
+        </button>
 
-            return (
-              <div
-                key={act.id}
-                className={`bg-white dark:bg-slate-900 border rounded-2xl p-3.5 shadow-xs transition-all ${
-                  act.completed
-                    ? 'border-slate-200/60 dark:border-slate-800/60 opacity-65'
-                    : urgency.isOverdue
-                    ? 'border-rose-300 dark:border-rose-900/60 bg-rose-50/20 dark:bg-rose-950/20'
-                    : urgency.isToday
-                    ? 'border-amber-300 dark:border-amber-800/60 bg-amber-50/20 dark:bg-amber-950/20'
-                    : 'border-slate-200/80 dark:border-slate-800'
+        <button
+          onClick={() => setActiveTab('rutin')}
+          className={`py-2 px-3 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 ${
+            activeTab === 'rutin'
+              ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+          }`}
+        >
+          <Repeat className="w-4 h-4 text-emerald-500" />
+          <span>Aktifitas Rutin ({routineActivities.length})</span>
+        </button>
+      </div>
+
+      {/* 3. SECTION A: DEADLINE TUGAS */}
+      {activeTab === 'deadline' && (
+        <div className="space-y-3">
+          {/* Status Filters */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-3 shadow-xs space-y-2">
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
+              <button
+                onClick={() => setFilterStatus('pending')}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all text-center ${
+                  filterStatus === 'pending'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200'
                 }`}
               >
-                <div className="flex items-start gap-3">
-                  {/* Tap-friendly Checkbox */}
-                  <button
-                    onClick={() => onToggleActivity(act.id)}
-                    className="mt-0.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 active:scale-90 transition-transform p-0.5"
-                    title={act.completed ? 'Tandai belum selesai' : 'Tandai selesai'}
-                  >
-                    {act.completed ? (
-                      <CheckSquare className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                    ) : (
-                      <Square className="w-5 h-5 text-slate-400 hover:text-indigo-600" />
-                    )}
-                  </button>
-
-                  {/* Main Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span
-                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border capitalize ${getCategoryColor(
-                          act.category
-                        )}`}
-                      >
-                        {act.category}
-                      </span>
-
-                      {act.priority === 'tinggi' && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-rose-100 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300">
-                          Penting
-                        </span>
-                      )}
-
-                      {/* Deadline Urgency Badge */}
-                      <span
-                        className={`text-[10px] px-2 py-0.5 rounded-full border flex items-center gap-1 ${urgency.badgeClass}`}
-                      >
-                        <Clock className="w-3 h-3" />
-                        {urgency.label}
-                      </span>
-                    </div>
-
-                    <h4
-                      className={`text-sm font-semibold mt-1.5 leading-snug break-words ${
-                        act.completed
-                          ? 'line-through text-slate-400 dark:text-slate-500 font-normal'
-                          : 'text-slate-900 dark:text-white'
-                      }`}
-                    >
-                      {act.title}
-                    </h4>
-
-                    {act.notes && (
-                      <div className="mt-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                        <div className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed break-words whitespace-pre-wrap">
-                          <AutoLinkText text={act.notes} />
-                        </div>
-                        <QuickUrlButtons text={act.notes} />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Actions: Revert, Edit & Delete */}
-                  <div className="flex items-center gap-1 shrink-0">
-                    {act.completed && (
-                      <button
-                        onClick={() => onToggleActivity(act.id)}
-                        className="text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 p-1.5 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-950/50 transition-colors flex items-center gap-1"
-                        title="Kembalikan ke belum selesai (isi alasan)"
-                        aria-label="Kembalikan ke belum selesai"
-                      >
-                        <RotateCcw className="w-4 h-4" />
-                        <span className="hidden sm:inline text-[11px] font-semibold">Batal</span>
-                      </button>
-                    )}
-
-                    <button
-                      onClick={() => setEditingActivity(act)}
-                      className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                      title="Edit kegiatan"
-                    >
-                      <Edit3 className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      onClick={() => onDeleteActivity(act.id)}
-                      className="text-slate-300 hover:text-rose-600 dark:text-slate-600 dark:hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                      title="Hapus kegiatan"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {/* Shortcut to Routine Reminders / Alarm */}
-      {onNavigateToReminders && (
-        <div className="p-3 bg-linear-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30 border border-indigo-100 dark:border-indigo-900/40 rounded-2xl flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-indigo-600 text-white">
-              <Bell className="w-3.5 h-3.5" />
+                Belum Selesai ({pendingDeadlineCount})
+              </button>
+              <button
+                onClick={() => setFilterStatus('all')}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all text-center ${
+                  filterStatus === 'all'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                }`}
+              >
+                Semua ({deadlineActivities.length})
+              </button>
+              <button
+                onClick={() => setFilterStatus('completed')}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all text-center ${
+                  filterStatus === 'completed'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                }`}
+              >
+                Selesai ({completedDeadlineCount})
+              </button>
             </div>
-            <div>
-              <span className="font-bold text-slate-800 dark:text-slate-200">
-                Pengingat Jam & Alarm Rutin
-              </span>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                Atur alarm jam minum air, peregangan badan, atau istirahat
-              </p>
+
+            {/* Category Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+              {[
+                { id: 'all', label: 'Semua Kategori' },
+                { id: 'kerjaan', label: 'Kerjaan' },
+                { id: 'ibadah', label: 'Ibadah' },
+                { id: 'kesehatan', label: 'Kesehatan' },
+                { id: 'keuangan', label: 'Keuangan' },
+                { id: 'belajar', label: 'Belajar' },
+                { id: 'pribadi', label: 'Pribadi' }
+              ].map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.id)}
+                  className={`px-2.5 py-1 text-[11px] font-medium rounded-full shrink-0 transition-colors ${
+                    selectedCategory === cat.id
+                      ? 'bg-slate-900 dark:bg-slate-200 text-white dark:text-slate-900 font-bold'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
             </div>
           </div>
-          <button
-            onClick={onNavigateToReminders}
-            className="px-2.5 py-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline shrink-0"
-          >
-            Buka &rarr;
-          </button>
+
+          {/* Activities List */}
+          <div className="space-y-2.5">
+            {filteredDeadlines.length === 0 ? (
+              <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-8 text-center shadow-xs">
+                <CheckCircle2 className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto mb-2" />
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                  {filterStatus === 'pending'
+                    ? 'Tidak ada kegiatan deadline yang tertunda'
+                    : 'Belum ada daftar kegiatan'}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs mx-auto">
+                  {filterStatus === 'pending'
+                    ? 'Hebat! Semua tugas berbatas waktu sudah diselesaikan.'
+                    : 'Catat kegiatan baru agar jadwal dan deadlinemu selalu teringat.'}
+                </p>
+                <button
+                  onClick={() => {
+                    setActivityType('deadline');
+                    setIsAddModalOpen(true);
+                  }}
+                  className="mt-4 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl inline-flex items-center gap-1.5 active:scale-95 transition-all shadow-xs"
+                >
+                  <Plus className="w-4 h-4" />
+                  Catat Kegiatan Baru
+                </button>
+              </div>
+            ) : (
+              filteredDeadlines.map((act) => {
+                const urgency = getActivityUrgency(act.dueDate, act.dueTime, act.completed);
+
+                return (
+                  <div
+                    key={act.id}
+                    className={`bg-white dark:bg-slate-900 border rounded-2xl p-3.5 shadow-xs transition-all ${
+                      act.completed
+                        ? 'border-slate-200/60 dark:border-slate-800/60 opacity-65'
+                        : urgency.isOverdue
+                        ? 'border-rose-300 dark:border-rose-900/60 bg-rose-50/20 dark:bg-rose-950/20'
+                        : urgency.isToday
+                        ? 'border-amber-300 dark:border-amber-800/60 bg-amber-50/20 dark:bg-amber-950/20'
+                        : 'border-slate-200/80 dark:border-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      {/* Tap-friendly Checkbox */}
+                      <button
+                        onClick={() => onToggleActivity(act.id)}
+                        className="mt-0.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 active:scale-90 transition-transform p-0.5"
+                        title={act.completed ? 'Kembalikan ke belum selesai (isi alasan)' : 'Tandai selesai'}
+                      >
+                        {act.completed ? (
+                          <CheckSquare className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                        ) : (
+                          <Square className="w-5 h-5 text-slate-400 hover:text-indigo-600" />
+                        )}
+                      </button>
+
+                      {/* Main Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span
+                            className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border capitalize ${getCategoryColor(
+                              act.category
+                            )}`}
+                          >
+                            {act.category === 'ibadah' ? '🌙 Ibadah' : act.category}
+                          </span>
+
+                          {act.priority === 'tinggi' && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-rose-100 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300">
+                              Penting
+                            </span>
+                          )}
+
+                          {/* Deadline Urgency Badge */}
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded-full border flex items-center gap-1 ${urgency.badgeClass}`}
+                          >
+                            <Clock className="w-3 h-3" />
+                            {urgency.label}
+                          </span>
+                        </div>
+
+                        <h4
+                          className={`text-sm font-semibold mt-1.5 leading-snug break-words ${
+                            act.completed
+                              ? 'line-through text-slate-400 dark:text-slate-500 font-normal'
+                              : 'text-slate-900 dark:text-white'
+                          }`}
+                        >
+                          {act.title}
+                        </h4>
+
+                        {/* Catatan / Detail Tambahan & Clickable Links */}
+                        {act.notes && (
+                          <div className="mt-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                            <div className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed break-words whitespace-pre-wrap">
+                              <AutoLinkText text={act.notes} />
+                            </div>
+                            <QuickUrlButtons text={act.notes} />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Actions: Revert, Edit & Delete */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {act.completed && (
+                          <button
+                            onClick={() => onToggleActivity(act.id)}
+                            className="text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 p-1.5 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-950/50 transition-colors flex items-center gap-1"
+                            title="Kembalikan ke belum selesai (isi alasan)"
+                            aria-label="Kembalikan ke belum selesai"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                            <span className="hidden sm:inline text-[11px] font-semibold">Batal</span>
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => setEditingActivity(act)}
+                          className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                          title="Edit kegiatan"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          onClick={() => onDeleteActivity(act.id)}
+                          className="text-slate-300 hover:text-rose-600 dark:text-slate-600 dark:hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                          title="Hapus kegiatan"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       )}
 
-      {/* Modal / Sheet: Add New Activity */}
+      {/* 4. SECTION B: AKTIFITAS RUTIN (HARIAN & BULANAN) */}
+      {activeTab === 'rutin' && (
+        <div className="space-y-3">
+          {/* Sub-Filters for Routine */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-3 shadow-xs flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            {[
+              { id: 'all', label: 'Semua Rutin' },
+              { id: 'harian', label: '🔄 Rutin Harian' },
+              { id: 'bulanan', label: '📅 Rutin Bulanan' },
+              { id: 'ibadah', label: '🌙 Rutin Ibadah' }
+            ].map((rf) => (
+              <button
+                key={rf.id}
+                onClick={() => setRoutineFilter(rf.id as any)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-xl shrink-0 transition-colors ${
+                  routineFilter === rf.id
+                    ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                }`}
+              >
+                {rf.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="space-y-2.5">
+            {filteredRoutines.length === 0 ? (
+              <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-8 text-center shadow-xs">
+                <Repeat className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto mb-2" />
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                  Belum ada kegiatan rutin
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs mx-auto">
+                  Catat aktifitas rutin harian (seperti sholat 5 waktu, tilawah, cek email) atau bulanan (bayar tagihan, rekap gaji) agar tidak hilang dan bisa diupdate setiap hari!
+                </p>
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                  <button
+                    onClick={() => {
+                      setActivityType('rutin_harian');
+                      setIsAddModalOpen(true);
+                    }}
+                    className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl inline-flex items-center gap-1.5 active:scale-95 transition-all shadow-xs"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Tambah Rutin Harian
+                  </button>
+                  <button
+                    onClick={() => {
+                      onAddActivity({
+                        title: 'Sholat Fardhu 5 Waktu Tepat Waktu & Dzikir',
+                        category: 'ibadah',
+                        activityType: 'rutin_harian',
+                        dueDate: todayDate,
+                        completed: false,
+                        priority: 'tinggi',
+                        notes: 'Subuh, Dzuhur, Ashar, Maghrib, Isya. Menjaga ketenangan batin dan spiritual.'
+                      });
+                      onAddActivity({
+                        title: "Tilawah Al-Qur'an 1 Ruku / 1 Halaman",
+                        category: 'ibadah',
+                        activityType: 'rutin_harian',
+                        dueDate: todayDate,
+                        completed: false,
+                        priority: 'sedang',
+                        notes: 'Rutinkan setiap hari setelah subuh atau sebelum istirahat malam.'
+                      });
+                      onAddActivity({
+                        title: 'Bayar Tagihan Listrik, Internet & Air',
+                        category: 'keuangan',
+                        activityType: 'rutin_bulanan',
+                        dueDate: `${todayDate.slice(0, 7)}-20`,
+                        completed: false,
+                        priority: 'tinggi',
+                        notes: 'Cek tagihan awal bulan dan bayar via m-Banking sebelum tanggal 20.'
+                      });
+                      if (soundEnabled) sound.playSuccess();
+                    }}
+                    className="px-3.5 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300/60 rounded-xl inline-flex items-center gap-1.5 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-all"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
+                    Muat Contoh Rutinitas Ibadah
+                  </button>
+                </div>
+              </div>
+            ) : (
+              filteredRoutines.map((act) => {
+                const isDone = isRoutineCompleted(act);
+                const isMonthly = act.activityType === 'rutin_bulanan';
+
+                return (
+                  <div
+                    key={act.id}
+                    className={`bg-white dark:bg-slate-900 border rounded-2xl p-3.5 shadow-xs transition-all ${
+                      isDone
+                        ? 'border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/20 dark:bg-emerald-950/20'
+                        : 'border-slate-200/80 dark:border-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      {/* Routine Checkbox - Toggles today or this month */}
+                      <button
+                        onClick={() => {
+                          if (onToggleRoutine) {
+                            onToggleRoutine(act.id);
+                          } else {
+                            onToggleActivity(act.id);
+                          }
+                        }}
+                        className="mt-0.5 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 active:scale-90 transition-transform p-0.5"
+                        title={
+                          isDone
+                            ? isMonthly
+                              ? 'Sudah selesai bulan ini (klik untuk ubah)'
+                              : 'Sudah selesai hari ini (klik untuk ubah)'
+                            : isMonthly
+                            ? 'Tandai selesai bulan ini'
+                            : 'Tandai selesai hari ini'
+                        }
+                      >
+                        {isDone ? (
+                          <CheckSquare className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                        ) : (
+                          <Square className="w-5 h-5 text-slate-400 hover:text-emerald-600" />
+                        )}
+                      </button>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {/* Routine Type Badge */}
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 flex items-center gap-1">
+                            {isMonthly ? <CalendarRange className="w-3 h-3" /> : <Repeat className="w-3 h-3 text-emerald-500" />}
+                            {isMonthly ? 'Rutin Bulanan' : 'Rutin Harian'}
+                          </span>
+
+                          <span
+                            className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border capitalize ${getCategoryColor(
+                              act.category
+                            )}`}
+                          >
+                            {act.category === 'ibadah' ? '🌙 Ibadah' : act.category}
+                          </span>
+
+                          {/* Completion Status Badge */}
+                          {isDone ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 flex items-center gap-1 border border-emerald-200">
+                              <CheckCircle2 className="w-3 h-3" />
+                              {isMonthly ? 'Selesai Bulan Ini ✨' : 'Selesai Hari Ini ✨'}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200">
+                              {isMonthly ? 'Belum Bulan Ini' : 'Belum Hari Ini'}
+                            </span>
+                          )}
+                        </div>
+
+                        <h4
+                          className={`text-sm font-semibold mt-1.5 leading-snug break-words ${
+                            isDone ? 'text-slate-700 dark:text-slate-300' : 'text-slate-900 dark:text-white'
+                          }`}
+                        >
+                          {act.title}
+                        </h4>
+
+                        {/* Catatan / Detail Tambahan & Clickable Links */}
+                        {act.notes && (
+                          <div className="mt-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                            <div className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed break-words whitespace-pre-wrap">
+                              <AutoLinkText text={act.notes} />
+                            </div>
+                            <QuickUrlButtons text={act.notes} />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Actions: Edit & Delete */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => setEditingActivity(act)}
+                          className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                          title="Edit kegiatan rutin"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          onClick={() => onDeleteActivity(act.id)}
+                          className="text-slate-300 hover:text-rose-600 dark:text-slate-600 dark:hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                          title="Hapus kegiatan rutin"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5. Modal Tambah Kegiatan */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-2xl p-5 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 mb-4">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Plus className="w-4 h-4 text-indigo-600" />
-                Catat Kegiatan & Deadline
-              </h3>
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 bg-slate-900/60 backdrop-blur-xs"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsAddModalOpen(false);
+          }}
+        >
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-850">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
+                  <Plus className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Catat Kegiatan Baru
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Pilih tipe deadline atau aktifitas rutin (harian/bulanan)
+                  </p>
+                </div>
+              </div>
               <button
                 onClick={() => setIsAddModalOpen(false)}
-                className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateActivity} className="space-y-3.5">
+            {/* Modal Form */}
+            <form onSubmit={handleCreateActivity} className="p-5 overflow-y-auto space-y-3.5 text-xs">
+              {/* Tipe Kegiatan: Deadline vs Rutin */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Tipe Kegiatan
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { id: 'deadline', label: 'Deadline Tugas', icon: Clock },
+                    { id: 'rutin_harian', label: 'Rutin Harian', icon: Repeat },
+                    { id: 'rutin_bulanan', label: 'Rutin Bulanan', icon: CalendarRange }
+                  ].map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setActivityType(t.id as any)}
+                      className={`p-2 rounded-xl border text-center transition-all ${
+                        activityType === t.id
+                          ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-bold shadow-2xs'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      <t.icon className="w-3.5 h-3.5 mx-auto mb-1 opacity-80" />
+                      <span className="text-[10px] block leading-tight">{t.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Title */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Nama Kegiatan / Tugas <span className="text-rose-500">*</span>
+                  Nama Kegiatan <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="Misal: Kirim revisi desain atau beli obat"
+                  placeholder={
+                    activityType === 'rutin_harian'
+                      ? 'Contoh: Sholat Fardhu 5 Waktu, Minum Vitamin, Daily Standup...'
+                      : activityType === 'rutin_bulanan'
+                      ? 'Contoh: Bayar Listrik & Wifi, Rekap Keuangan Bulanan...'
+                      : 'Contoh: Buat presentasi klien, kirim invoice...'
+                  }
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                  autoFocus
+                  className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
 
-              {/* Category selector */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Kategori
-                </label>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {(['kerjaan', 'kesehatan', 'keuangan', 'belajar', 'pribadi'] as const).map((cat) => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setCategory(cat)}
-                      className={`py-1.5 px-2 text-[11px] font-semibold rounded-lg capitalize border transition-all ${
-                        category === cat
-                          ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
-                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Deadline Date & Time */}
-              <div className="grid grid-cols-2 gap-2">
+              {/* Category & Priority */}
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
-                    <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                    Batas Tanggal <span className="text-rose-500">*</span>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Kategori
                   </label>
-                  <input
-                    type="date"
-                    required
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                  />
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value as any)}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500 capitalize"
+                  >
+                    <option value="kerjaan">Kerjaan</option>
+                    <option value="ibadah">🌙 Ibadah & Spiritual</option>
+                    <option value="kesehatan">Kesehatan</option>
+                    <option value="keuangan">Keuangan</option>
+                    <option value="belajar">Belajar</option>
+                    <option value="pribadi">Pribadi</option>
+                    <option value="lainnya">Lainnya</option>
+                  </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
-                    <Clock className="w-3.5 h-3.5 text-indigo-600" />
-                    Jam (Opsional)
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Prioritas
                   </label>
-                  <input
-                    type="time"
-                    value={dueTime}
-                    onChange={(e) => setDueTime(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                  />
+                  <select
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value as any)}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500 capitalize"
+                  >
+                    <option value="tinggi">Tinggi (Penting)</option>
+                    <option value="sedang">Sedang</option>
+                    <option value="rendah">Rendah</option>
+                  </select>
                 </div>
               </div>
 
-              {/* Priority */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Tingkat Prioritas
-                </label>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {[
-                    { id: 'tinggi' as const, label: 'Penting / Urgent', color: 'text-rose-600 border-rose-300' },
-                    { id: 'sedang' as const, label: 'Sedang / Biasa', color: 'text-amber-600 border-amber-300' },
-                    { id: 'rendah' as const, label: 'Santai', color: 'text-slate-600 border-slate-300' }
-                  ].map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => setPriority(p.id)}
-                      className={`py-1.5 px-1.5 text-[11px] font-semibold rounded-lg border transition-all text-center ${
-                        priority === p.id
-                          ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
-                          : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
-                      }`}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
+              {/* Deadline specific date / time */}
+              {activityType === 'deadline' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Tanggal Tenggat
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={dueDate}
+                      onChange={(e) => setDueDate(e.target.value)}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Jam (Opsional)
+                    </label>
+                    <input
+                      type="time"
+                      value={dueTime}
+                      onChange={(e) => setDueTime(e.target.value)}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Notes & Links */}
               <div>
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
                   <span>Catatan / Link Pekerjaan (Opsional)</span>
-                  <span className="text-[10px] text-slate-400 font-normal">Google Docs, Drive, web, dll</span>
+                  <span className="text-[10px] text-slate-400 font-normal">Google Docs, Drive, dll</span>
                 </label>
                 <textarea
                   rows={2}
