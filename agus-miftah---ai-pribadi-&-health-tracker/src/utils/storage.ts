@@ -5,9 +5,39 @@ import {
   ReminderItem,
   HealthCheckRecord,
   TransactionLog,
+  FinancialGoal,
   ChatMessage,
-  UserSettings
+  UserSettings,
+  AccessProfile,
+  AppFeatureTab
 } from '../types';
+
+export const DEFAULT_ACCESS_PROFILES: AccessProfile[] = [
+  {
+    id: 'prof-master',
+    name: 'Master (Pak Agus)',
+    code: 'agus123',
+    isMaster: true,
+    allowedTabs: ['home', 'activities', 'health', 'finance', 'reminders', 'ai'],
+    createdAt: 1700000000000
+  },
+  {
+    id: 'prof-kerja',
+    name: 'Asisten / Tim Kerja',
+    code: 'kerja',
+    isMaster: false,
+    allowedTabs: ['home', 'activities', 'reminders'],
+    createdAt: 1700000001000
+  },
+  {
+    id: 'prof-keluarga',
+    name: 'Keluarga',
+    code: 'sehat',
+    isMaster: false,
+    allowedTabs: ['home', 'health'],
+    createdAt: 1700000002000
+  }
+];
 
 const STORAGE_KEY = 'agus_miftah_app_state_v3';
 const LEGACY_STORAGE_KEY = 'agus_miftah_app_state_v2';
@@ -139,6 +169,42 @@ export function getInitialDefaultState(): AppState {
 
   const defaultActivities: ActivityItem[] = [
     {
+      id: 'act-rutin-1',
+      title: 'Sholat Fardhu 5 Waktu Tepat Waktu & Dzikir',
+      category: 'ibadah',
+      dueDate: today,
+      completed: false,
+      priority: 'tinggi',
+      notes: 'Subuh, Dzuhur, Ashar, Maghrib, Isya. Menjaga ketenangan batin dan kesehatan spiritual.',
+      createdAt: Date.now() - 300000000,
+      activityType: 'rutin_harian',
+      routineCompletions: { [today]: false }
+    },
+    {
+      id: 'act-rutin-2',
+      title: 'Tilawah Al-Qur\'an 1 Ruku / 1 Halaman',
+      category: 'ibadah',
+      dueDate: today,
+      completed: false,
+      priority: 'sedang',
+      notes: 'Rutinkan setiap hari setelah sholat subuh atau menjelang istirahat.',
+      createdAt: Date.now() - 250000000,
+      activityType: 'rutin_harian',
+      routineCompletions: { [today]: false }
+    },
+    {
+      id: 'act-rutin-3',
+      title: 'Bayar Tagihan Listrik, Internet & Air',
+      category: 'keuangan',
+      dueDate: `${today.slice(0, 7)}-20`,
+      completed: false,
+      priority: 'tinggi',
+      notes: 'Cek tagihan awal bulan dan bayar via m-Banking sebelum tanggal 20.',
+      createdAt: Date.now() - 400000000,
+      activityType: 'rutin_bulanan',
+      routineCompletions: { [today.slice(0, 7)]: false }
+    },
+    {
       id: 'act-1',
       title: 'Kirim laporan progres mingguan ke tim',
       category: 'kerjaan',
@@ -147,7 +213,8 @@ export function getInitialDefaultState(): AppState {
       completed: false,
       priority: 'tinggi',
       notes: 'Rekap poin pencapaian minggu ini dan lampirkan file spreadsheet pendukung.',
-      createdAt: Date.now() - 86400000
+      createdAt: Date.now() - 86400000,
+      activityType: 'deadline'
     },
     {
       id: 'act-2',
@@ -158,7 +225,8 @@ export function getInitialDefaultState(): AppState {
       completed: false,
       priority: 'sedang',
       notes: 'Beli di apotek terdekat atau checkout via online shop.',
-      createdAt: Date.now() - 43200000
+      createdAt: Date.now() - 43200000,
+      activityType: 'deadline'
     },
     {
       id: 'act-3',
@@ -169,7 +237,8 @@ export function getInitialDefaultState(): AppState {
       completed: false,
       priority: 'sedang',
       notes: 'Cek WhatsApp atau email jika belum ada kabar.',
-      createdAt: Date.now() - 20000000
+      createdAt: Date.now() - 20000000,
+      activityType: 'deadline'
     },
     {
       id: 'act-4',
@@ -178,7 +247,8 @@ export function getInitialDefaultState(): AppState {
       dueDate: inThreeDays,
       completed: false,
       priority: 'rendah',
-      createdAt: Date.now() - 10000000
+      createdAt: Date.now() - 10000000,
+      activityType: 'deadline'
     },
     {
       id: 'act-5',
@@ -188,7 +258,8 @@ export function getInitialDefaultState(): AppState {
       completed: true,
       priority: 'sedang',
       createdAt: Date.now() - 120000000,
-      completedAt: Date.now() - 86400000
+      completedAt: Date.now() - 86400000,
+      activityType: 'deadline'
     }
   ];
 
@@ -297,142 +368,234 @@ export function getInitialDefaultState(): AppState {
     },
     {
       id: 'tx-2',
-      date: today,
-      title: 'Beli buah segar (Pisang & apel)',
-      amount: 30000,
-      type: 'pengeluaran',
-      category: 'Kesehatan'
-    },
-    {
-      id: 'tx-3',
-      date: dMinus1,
-      title: 'Honor proyek / Gaji freelance',
-      amount: 1500000,
-      type: 'pemasukan',
-      category: 'Pemasukan'
-    }
-  ];
+        date: today,
+        title: 'Beli buah segar (Pisang & apel)',
+        amount: 30000,
+        type: 'pengeluaran',
+        category: 'Kesehatan',
+        wallet: 'Tunai'
+      },
+      {
+        id: 'tx-3',
+        date: dMinus1,
+        title: 'Honor proyek / Gaji freelance',
+        amount: 1500000,
+        type: 'pemasukan',
+        category: 'Pemasukan',
+        wallet: 'BCA'
+      }
+    ];
 
-  const defaultReminders: ReminderItem[] = [
-    {
-      id: 'rem-1',
-      title: 'Bangun Pagi & 1 Gelas Air Hangat',
-      time: '06:00',
-      category: 'kesehatan',
-      days: [1, 2, 3, 4, 5, 6, 0],
-      enabled: true,
-      note: 'Minum air hangat untuk mengaktifkan organ tubuh dan ginjal.'
-    },
-    {
-      id: 'rem-2',
-      title: 'Cek Tensi & Hidrasi Siang',
-      time: '12:30',
-      category: 'kesehatan',
-      days: [1, 2, 3, 4, 5, 6, 0],
-      enabled: true,
-      note: 'Sudah minum berapa gelas hari ini? Pilih menu makan siang rendah garam & minyak.'
-    },
-    {
-      id: 'rem-3',
-      title: 'Waktunya Gerak Badan Sore',
-      time: '17:00',
-      category: 'kesehatan',
-      days: [1, 2, 3, 4, 5, 6],
-      enabled: true,
-      note: 'Jalan santai 30 menit atau stretching ringan.'
-    },
-    {
-      id: 'rem-4',
-      title: 'Istirahat Malam & Bebas Gadget',
-      time: '21:30',
-      category: 'kesehatan',
-      days: [1, 2, 3, 4, 5, 6, 0],
-      enabled: true,
-      note: 'Tutup hari dengan tenang, tidur cukup 7-8 jam.'
-    }
-  ];
+    const defaultFinancialTargets: FinancialGoal[] = [
+      {
+        id: 'goal-1',
+        title: 'Dana Darurat (3-6 Bulan)',
+        targetAmount: 15000000,
+        currentAmount: 8853063,
+        targetDate: `${new Date().getFullYear()}-12-31`,
+        category: 'Tabungan',
+        wallet: 'BCA',
+        notes: 'Target dana cadangan darurat keluarga.',
+        createdAt: Date.now() - 10000000
+      },
+      {
+        id: 'goal-2',
+        title: 'Tabungan Qurban & Ibadah',
+        targetAmount: 5000000,
+        currentAmount: 2450000,
+        targetDate: `${new Date().getFullYear()}-06-15`,
+        category: 'Ibadah',
+        wallet: 'DANA',
+        notes: 'Tabungan ibadah berkah tahun ini.',
+        createdAt: Date.now() - 5000000
+      }
+    ];
 
-  const defaultChatMessages: ChatMessage[] = [
-    {
-      id: 'msg-1',
-      role: 'model',
-      text: 'JARVIS online. Halo Agus! Sistem siap membantu Anda memantau skrining kesehatan (tensi, asam urat, gula darah), target harian, serta melacak kegiatan dan deadline yang belum selesai. Ada yang perlu saya proses hari ini?',
-      timestamp: Date.now() - 3600000
-    }
-  ];
+    const defaultReminders: ReminderItem[] = [
+      {
+        id: 'rem-1',
+        title: 'Bangun Pagi & 1 Gelas Air Hangat',
+        time: '06:00',
+        category: 'kesehatan',
+        days: [1, 2, 3, 4, 5, 6, 0],
+        enabled: true,
+        note: 'Minum air hangat untuk mengaktifkan organ tubuh dan ginjal.'
+      },
+      {
+        id: 'rem-2',
+        title: 'Cek Tensi & Hidrasi Siang',
+        time: '12:30',
+        category: 'kesehatan',
+        days: [1, 2, 3, 4, 5, 6, 0],
+        enabled: true,
+        note: 'Sudah minum berapa gelas hari ini? Pilih menu makan siang rendah garam & minyak.'
+      },
+      {
+        id: 'rem-3',
+        title: 'Waktunya Gerak Badan Sore',
+        time: '17:00',
+        category: 'kesehatan',
+        days: [1, 2, 3, 4, 5, 6],
+        enabled: true,
+        note: 'Jalan santai 30 menit atau stretching ringan.'
+      },
+      {
+        id: 'rem-4',
+        title: 'Istirahat Malam & Bebas Gadget',
+        time: '21:30',
+        category: 'kesehatan',
+        days: [1, 2, 3, 4, 5, 6, 0],
+        enabled: true,
+        note: 'Tutup hari dengan tenang, tidur cukup 7-8 jam.'
+      }
+    ];
 
-  const defaultSettings: UserSettings = {
-    userName: 'Agus',
-    soundEnabled: true,
-    notificationsEnabled: true
-  };
+    const defaultChatMessages: ChatMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'model',
+        text: 'JARVIS online. Halo Agus! Sistem siap membantu Anda memantau skrining kesehatan (tensi, asam urat, gula darah), target keuangan, serta melacak kegiatan rutin dan deadline pekerjaan. Ada yang perlu saya proses hari ini?',
+        timestamp: Date.now() - 3600000
+      }
+    ];
 
-  return {
-    activities: defaultActivities,
-    habits: defaultHabits,
-    reminders: defaultReminders,
-    healthChecks: defaultHealthChecks,
-    transactions: defaultTransactions,
-    chatMessages: defaultChatMessages,
-    settings: defaultSettings,
-    serverUpdatedAt: 0
-  };
-}
+    const defaultSettings: UserSettings = {
+      userName: 'Agus',
+      soundEnabled: true,
+      notificationsEnabled: true,
+      displayMode: 'auto',
+      appPin: 'agus123',
+      isPinRequired: false,
+      notifyHoursBefore: 1,
+      accessProfiles: DEFAULT_ACCESS_PROFILES
+    };
 
-export function normalizeHabit(h: any): HabitItem {
-  if (!h || typeof h !== 'object') {
     return {
-      id: `h-${Date.now()}`,
-      title: 'Kebiasaan',
-      category: 'kesehatan',
-      targetCount: 1,
-      unit: 'centang',
-      iconName: 'Activity',
-      color: '#10B981',
-      history: {},
-      currentStreak: 0
+      activities: defaultActivities,
+      habits: defaultHabits,
+      reminders: defaultReminders,
+      healthChecks: defaultHealthChecks,
+      transactions: defaultTransactions,
+      financialTargets: defaultFinancialTargets,
+      chatMessages: defaultChatMessages,
+      settings: defaultSettings,
+      serverUpdatedAt: 0
     };
   }
-  return {
-    id: String(h.id || `h-${Math.random().toString(36).substring(2, 7)}`),
-    title: String(h.title || 'Kebiasaan'),
-    category: h.category || 'kesehatan',
-    targetCount: typeof h.targetCount === 'number' && h.targetCount > 0 ? h.targetCount : 1,
-    unit: String(h.unit || 'centang'),
-    iconName: String(h.iconName || 'Activity'),
-    color: String(h.color || '#10B981'),
-    history: h.history && typeof h.history === 'object' && !Array.isArray(h.history) ? { ...h.history } : {},
-    currentStreak: typeof h.currentStreak === 'number' ? h.currentStreak : 0
-  };
-}
 
-export function normalizeAppState(parsed: any): AppState {
-  const defaultState = getInitialDefaultState();
-  if (!parsed || typeof parsed !== 'object') {
-    return defaultState;
+  export function normalizeHabit(h: any): HabitItem {
+    if (!h || typeof h !== 'object') {
+      return {
+        id: `h-${Date.now()}`,
+        title: 'Kebiasaan',
+        category: 'kesehatan',
+        targetCount: 1,
+        unit: 'centang',
+        iconName: 'Activity',
+        color: '#10B981',
+        history: {},
+        currentStreak: 0
+      };
+    }
+    return {
+      id: String(h.id || `h-${Math.random().toString(36).substring(2, 7)}`),
+      title: String(h.title || 'Kebiasaan'),
+      category: h.category || 'kesehatan',
+      targetCount: typeof h.targetCount === 'number' && h.targetCount > 0 ? h.targetCount : 1,
+      unit: String(h.unit || 'centang'),
+      iconName: String(h.iconName || 'Activity'),
+      color: String(h.color || '#10B981'),
+      history: h.history && typeof h.history === 'object' && !Array.isArray(h.history) ? { ...h.history } : {},
+      currentStreak: typeof h.currentStreak === 'number' ? h.currentStreak : 0
+    };
   }
 
-  const rawHabits = Array.isArray(parsed.habits) && parsed.habits.length > 0 ? parsed.habits : defaultState.habits;
-  let habits: HabitItem[] = rawHabits.map(normalizeHabit);
+  export function normalizeAccessProfiles(rawProfiles: any, legacyPin?: string): AccessProfile[] {
+    if (!Array.isArray(rawProfiles) || rawProfiles.length === 0) {
+      const profiles = [...DEFAULT_ACCESS_PROFILES];
+      if (legacyPin && legacyPin.trim()) {
+        profiles[0] = { ...profiles[0], code: legacyPin.trim() };
+      }
+      return profiles;
+    }
 
-  // If water habit (h-1) is missing, provide default water habit
-  if (!habits.some((h: HabitItem) => h.id === 'h-1')) {
-    const defaultWater = defaultState.habits.find((h) => h.id === 'h-1');
-    if (defaultWater) habits.unshift(defaultWater);
+    const validTabs: AppFeatureTab[] = ['home', 'activities', 'health', 'finance', 'reminders', 'ai'];
+
+    const normalized = rawProfiles.map((p: any, idx: number) => {
+      const allowed = Array.isArray(p.allowedTabs)
+        ? p.allowedTabs.filter((t: any) => validTabs.includes(t))
+        : (p.isMaster ? validTabs : ['home', 'activities']);
+
+      return {
+        id: String(p.id || `prof-${idx}-${Date.now()}`),
+        name: String(p.name || (p.isMaster ? 'Master (Pemilik)' : `Profil ${idx + 1}`)),
+        code: String(p.code || (p.isMaster ? 'agus123' : `akses${idx + 1}`)).trim(),
+        isMaster: Boolean(p.isMaster || idx === 0),
+        allowedTabs: allowed.length > 0 ? allowed : (['home'] as AppFeatureTab[]),
+        createdAt: typeof p.createdAt === 'number' ? p.createdAt : Date.now()
+      };
+    });
+
+    // Ensure there is at least one master profile
+    if (!normalized.some((p) => p.isMaster)) {
+      normalized[0].isMaster = true;
+      normalized[0].allowedTabs = validTabs;
+    }
+
+    return normalized;
   }
 
-  return {
-    activities: Array.isArray(parsed.activities) ? parsed.activities : defaultState.activities,
-    habits,
-    reminders: Array.isArray(parsed.reminders) ? parsed.reminders : defaultState.reminders,
-    healthChecks: Array.isArray(parsed.healthChecks) ? parsed.healthChecks : defaultState.healthChecks,
-    transactions: Array.isArray(parsed.transactions) ? parsed.transactions : defaultState.transactions,
-    chatMessages: Array.isArray(parsed.chatMessages) ? parsed.chatMessages : defaultState.chatMessages,
-    settings: { ...defaultState.settings, ...(parsed.settings || {}) },
-    serverUpdatedAt: typeof parsed.serverUpdatedAt === 'number' ? parsed.serverUpdatedAt : 0,
-    syncRevision: typeof parsed.syncRevision === 'number' ? parsed.syncRevision : undefined
-  };
-}
+  export function normalizeAppState(parsed: any): AppState {
+    const defaultState = getInitialDefaultState();
+    if (!parsed || typeof parsed !== 'object') {
+      return defaultState;
+    }
+
+    const rawHabits = Array.isArray(parsed.habits) && parsed.habits.length > 0 ? parsed.habits : defaultState.habits;
+    let habits: HabitItem[] = rawHabits.map(normalizeHabit);
+
+    // If water habit (h-1) is missing, provide default water habit
+    if (!habits.some((h: HabitItem) => h.id === 'h-1')) {
+      const defaultWater = defaultState.habits.find((h) => h.id === 'h-1');
+      if (defaultWater) habits.unshift(defaultWater);
+    }
+
+    const rawActivities = Array.isArray(parsed.activities) ? parsed.activities : defaultState.activities;
+    const activities: ActivityItem[] = rawActivities.map((a: any) => ({
+      ...a,
+      category: a.category || 'kerjaan',
+      activityType: a.activityType || 'deadline',
+      routineCompletions: a.routineCompletions && typeof a.routineCompletions === 'object' ? a.routineCompletions : {}
+    }));
+
+    const accessProfiles = normalizeAccessProfiles(
+      parsed.settings?.accessProfiles,
+      parsed.settings?.appPin
+    );
+
+    const masterProfile = accessProfiles.find((p) => p.isMaster) || accessProfiles[0];
+
+    return {
+      activities,
+      habits,
+      reminders: Array.isArray(parsed.reminders) ? parsed.reminders : defaultState.reminders,
+      healthChecks: Array.isArray(parsed.healthChecks) ? parsed.healthChecks : defaultState.healthChecks,
+      transactions: Array.isArray(parsed.transactions) ? parsed.transactions : defaultState.transactions,
+      financialTargets: Array.isArray(parsed.financialTargets) ? parsed.financialTargets : (defaultState.financialTargets || []),
+      chatMessages: Array.isArray(parsed.chatMessages) ? parsed.chatMessages : defaultState.chatMessages,
+      settings: {
+        ...defaultState.settings,
+        ...(parsed.settings || {}),
+        displayMode: parsed.settings?.displayMode || 'auto',
+        appPin: masterProfile.code || parsed.settings?.appPin || 'agus123',
+        isPinRequired: typeof parsed.settings?.isPinRequired === 'boolean' ? parsed.settings.isPinRequired : false,
+        notifyHoursBefore: typeof parsed.settings?.notifyHoursBefore === 'number' ? parsed.settings.notifyHoursBefore : 1,
+        accessProfiles
+      },
+      serverUpdatedAt: typeof parsed.serverUpdatedAt === 'number' ? parsed.serverUpdatedAt : 0,
+      syncRevision: typeof parsed.syncRevision === 'number' ? parsed.syncRevision : undefined
+    };
+  }
 
 export function loadAppState(): AppState {
   if (typeof window === 'undefined') {
