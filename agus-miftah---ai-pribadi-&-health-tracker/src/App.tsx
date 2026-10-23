@@ -16,6 +16,7 @@ import { HealthCheckModal } from './components/HealthCheckModal';
 import { SyncModal } from './components/SyncModal';
 import { ConfirmDeleteModal } from './components/ConfirmDeleteModal';
 import { ConfirmCompleteModal } from './components/ConfirmCompleteModal';
+import { RevertActivityModal } from './components/RevertActivityModal';
 import {
   AppState,
   ActivityItem,
@@ -62,6 +63,7 @@ export default function App() {
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<DeleteConfirmTarget | null>(null);
   const [completeConfirmActivity, setCompleteConfirmActivity] = useState<ActivityItem | null>(null);
+  const [revertConfirmActivity, setRevertConfirmActivity] = useState<ActivityItem | null>(null);
   const [syncToast, setSyncToast] = useState<string | null>(null);
   const [lastNotifiedTime, setLastNotifiedTime] = useState<string>('');
 
@@ -359,8 +361,8 @@ export default function App() {
       // Prompt user confirmation before marking completed
       setCompleteConfirmActivity(act);
     } else {
-      // Unchecking an already completed activity toggles directly
-      handleToggleActivity(id);
+      // Prompt user confirmation with reason before reverting back to incomplete
+      setRevertConfirmActivity(act);
     }
   };
 
@@ -371,6 +373,34 @@ export default function App() {
       sound.playSuccess();
     }
     setCompleteConfirmActivity(null);
+  };
+
+  const handleConfirmRevert = (activityId: string, reason: string) => {
+    updateAndSyncState((prev) => {
+      const activities = (prev.activities || []).map((a) => {
+        if (a.id !== activityId) return a;
+        let updatedNotes = a.notes || '';
+        if (reason.trim()) {
+          const now = new Date();
+          const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+          const dateStr = now.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit' });
+          const reasonEntry = `\n[Batal Selesai ${dateStr} ${timeStr}]: ${reason.trim()}`;
+          updatedNotes = updatedNotes ? `${updatedNotes}${reasonEntry}` : reasonEntry.trim();
+        }
+        return {
+          ...a,
+          completed: false,
+          completedAt: undefined,
+          notes: updatedNotes
+        };
+      });
+      return { ...prev, activities };
+    });
+
+    if (appState.settings.soundEnabled) {
+      sound.playBreathCue(false);
+    }
+    setRevertConfirmActivity(null);
   };
 
   const handleAddActivity = (newAct: Omit<ActivityItem, 'id' | 'createdAt'>) => {
@@ -777,6 +807,14 @@ export default function App() {
         activity={completeConfirmActivity}
         onConfirm={handleConfirmComplete}
         onCancel={() => setCompleteConfirmActivity(null)}
+      />
+
+      {/* Revert Activity Confirmation Modal with reason prompt */}
+      <RevertActivityModal
+        isOpen={!!revertConfirmActivity}
+        activity={revertConfirmActivity}
+        onConfirm={handleConfirmRevert}
+        onCancel={() => setRevertConfirmActivity(null)}
       />
 
       {/* Universal Delete Confirmation Modal */}
