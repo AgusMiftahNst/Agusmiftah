@@ -249,7 +249,7 @@ export function HomeView({
           )}
 
           {/* 3. Aktifitas Rutin Harian & Ibadah Hari Ini (User request: gak hilang sekali selesai) */}
-          {isTabAllowed('activities') && routineActivities.length > 0 && (
+          {isTabAllowed('activities') && (
             <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 shadow-xs">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
@@ -275,64 +275,79 @@ export function HomeView({
                 </button>
               </div>
 
-              <div className="space-y-2">
-                {routineActivities.slice(0, 4).map((routine) => {
-                  const comps = routine.routineCompletions || {};
-                  const isDone = routine.activityType === 'rutin_bulanan'
-                    ? Boolean(comps[currentMonth])
-                    : Boolean(comps[todayDate]);
+              {routineActivities.length === 0 ? (
+                <div className="py-3 text-center bg-slate-50/50 dark:bg-slate-800/40 rounded-xl p-3 border border-dashed border-slate-200 dark:border-slate-700">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Belum ada aktifitas rutin atau ibadah harian.
+                  </p>
+                  <button
+                    onClick={() => onNavigateTab('activities')}
+                    className="mt-2 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline inline-flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Tambah Rutinitas Harian / Ibadah
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {routineActivities.slice(0, 4).map((routine) => {
+                    const comps = routine.routineCompletions || {};
+                    const isDone = routine.activityType === 'rutin_bulanan'
+                      ? Boolean(comps[currentMonth])
+                      : Boolean(comps[todayDate]);
 
-                  return (
-                    <div
-                      key={routine.id}
-                      onClick={() => {
-                        if (onToggleRoutine) onToggleRoutine(routine.id);
-                        else onToggleActivity(routine.id);
-                      }}
-                      className={`p-2.5 rounded-xl border flex items-center justify-between gap-2.5 cursor-pointer transition-colors ${
-                        isDone
-                          ? 'bg-emerald-50/30 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-900/40'
-                          : 'bg-slate-50/70 dark:bg-slate-850/60 border-slate-100 dark:border-slate-800'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <button
-                          type="button"
-                          className="shrink-0 text-slate-400 hover:text-emerald-600"
-                        >
-                          {isDone ? (
-                            <CheckSquare className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                          ) : (
-                            <Square className="w-4 h-4 text-slate-400" />
-                          )}
-                        </button>
-                        <div className="truncate">
-                          <span
-                            className={`text-xs font-medium block truncate ${
-                              isDone ? 'text-slate-600 dark:text-slate-400 line-through' : 'text-slate-900 dark:text-white font-semibold'
-                            }`}
+                    return (
+                      <div
+                        key={routine.id}
+                        onClick={() => {
+                          if (onToggleRoutine) onToggleRoutine(routine.id);
+                          else onToggleActivity(routine.id);
+                        }}
+                        className={`p-2.5 rounded-xl border flex items-center justify-between gap-2.5 cursor-pointer transition-colors ${
+                          isDone
+                            ? 'bg-emerald-50/30 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-900/40'
+                            : 'bg-slate-50/70 dark:bg-slate-850/60 border-slate-100 dark:border-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <button
+                            type="button"
+                            className="shrink-0 text-slate-400 hover:text-emerald-600"
                           >
-                            {routine.title}
-                          </span>
-                          <span className="text-[10px] text-slate-400">
-                            {routine.category === 'ibadah' ? '🌙 Ibadah' : routine.category}
-                          </span>
+                            {isDone ? (
+                              <CheckSquare className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            ) : (
+                              <Square className="w-4 h-4 text-slate-400" />
+                            )}
+                          </button>
+                          <div className="truncate">
+                            <span
+                              className={`text-xs font-medium block truncate ${
+                                isDone ? 'text-slate-600 dark:text-slate-400 line-through' : 'text-slate-900 dark:text-white font-semibold'
+                              }`}
+                            >
+                              {routine.title}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              {routine.category === 'ibadah' ? '🌙 Ibadah' : routine.category}
+                            </span>
+                          </div>
                         </div>
-                      </div>
 
-                      {isDone ? (
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 shrink-0">
-                          Selesai ✨
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 shrink-0">
-                          Belum
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                        {isDone ? (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 shrink-0">
+                            Selesai ✨
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 shrink-0">
+                            Belum
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
