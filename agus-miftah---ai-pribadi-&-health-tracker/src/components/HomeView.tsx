@@ -19,6 +19,7 @@ import { HabitItem, HealthCheckRecord, TransactionLog, ReminderItem, ActivityIte
 import { formatRupiah, formatDateIndonesian, getActivityUrgency } from '../utils/storage';
 import { sound } from '../utils/audio';
 import { JarvisLogo } from './JarvisLogo';
+import { AutoLinkText, QuickUrlButtons } from './AutoLinkText';
 
 interface HomeViewProps {
   todayDate: string;
@@ -57,7 +58,7 @@ export function HomeView({
   const pendingActivities = activities.filter((a) => !a.completed);
   const urgentActivities = [...pendingActivities]
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
-    .slice(0, 3);
+    .slice(0, 5);
 
   // Today transactions summary
   const todayTransactions = transactions.filter((t) => t.date === todayDate);
@@ -144,37 +145,52 @@ export function HomeView({
             Tidak ada kegiatan tertunda. Semua beres! 🎉
           </p>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             {urgentActivities.map((act) => {
               const urgency = getActivityUrgency(act.dueDate, act.dueTime, act.completed);
               return (
                 <div
                   key={act.id}
-                  className="p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-850 flex items-start gap-2.5"
+                  className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-850/80 flex items-start gap-3 shadow-2xs hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
                 >
                   <button
-                    onClick={() => {
-                      if (soundEnabled) sound.playSuccess();
-                      onToggleActivity(act.id);
-                    }}
-                    className="mt-0.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 active:scale-90 transition-transform"
-                    title="Tandai selesai"
+                    onClick={() => onToggleActivity(act.id)}
+                    className="mt-0.5 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 active:scale-90 transition-transform p-1 min-w-[28px] min-h-[28px] flex items-center justify-center rounded-lg hover:bg-slate-200/60 dark:hover:bg-slate-800"
+                    title="Tandai selesai (dengan konfirmasi)"
+                    aria-label="Tandai selesai"
                   >
                     <Square className="w-4 h-4" />
                   </button>
 
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
-                      {act.title}
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className={`text-[10px] px-1.5 py-0.2 rounded-md border ${urgency.badgeClass}`}>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${urgency.badgeClass}`}>
                         {urgency.label}
                       </span>
-                      <span className="text-[10px] text-slate-400 capitalize">
-                        · {act.category}
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium capitalize bg-white dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200/60 dark:border-slate-700/60">
+                        {act.category}
                       </span>
+                      {act.priority === 'tinggi' && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-sm bg-rose-100 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300">
+                          Penting
+                        </span>
+                      )}
                     </div>
+
+                    <p className="text-xs font-semibold text-slate-900 dark:text-white mt-1 leading-snug break-words">
+                      {act.title}
+                    </p>
+
+                    {/* Catatan / Detail Tambahan & Link Langsung */}
+                    {act.notes && (
+                      <div className="mt-2 p-2 rounded-lg bg-white/90 dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800/80 shadow-2xs">
+                        <div className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed break-words whitespace-pre-wrap">
+                          <AutoLinkText text={act.notes} />
+                        </div>
+                        {/* Direct 1-tap link action buttons */}
+                        <QuickUrlButtons text={act.notes} />
+                      </div>
+                    )}
                   </div>
                 </div>
               );
