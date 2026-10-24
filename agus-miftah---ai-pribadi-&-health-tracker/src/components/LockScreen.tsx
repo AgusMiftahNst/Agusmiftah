@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Lock, Unlock, Eye, EyeOff, ShieldCheck, KeyRound, AlertCircle, Sparkles } from 'lucide-react';
+import { Lock, Unlock, Eye, EyeOff, ShieldCheck, AlertCircle, Sparkles } from 'lucide-react';
 import { sound } from '../utils/audio';
 import { AccessProfile } from '../types';
 
@@ -22,7 +22,6 @@ export function LockScreen({
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isShaking, setIsShaking] = useState(false);
-  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [unlockedProfileName, setUnlockedProfileName] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -31,7 +30,6 @@ export function LockScreen({
     if (isLocked) {
       setInputCode('');
       setErrorMsg('');
-      setIsResetConfirmOpen(false);
       setUnlockedProfileName(null);
       setTimeout(() => {
         inputRef.current?.focus();
@@ -90,24 +88,6 @@ export function LockScreen({
     }
   };
 
-  const executeReset = () => {
-    if (onResetToDefault) {
-      onResetToDefault();
-      setIsResetConfirmOpen(false);
-      sound.playZenChime();
-      // Unlock as master
-      const defaultMaster: AccessProfile = {
-        id: 'prof-master-default',
-        name: 'Master (Pak Agus)',
-        code: 'agus123',
-        isMaster: true,
-        allowedTabs: ['home', 'activities', 'health', 'finance', 'reminders', 'ai'],
-        createdAt: Date.now()
-      };
-      onUnlock(defaultMaster);
-    }
-  };
-
   return (
     <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-950/95 backdrop-blur-md text-white animate-fade-in select-none">
       {/* Background ambient lighting */}
@@ -131,7 +111,7 @@ export function LockScreen({
           <ShieldCheck className="w-4 h-4 text-cyan-400" />
         </h2>
         <p className="text-xs text-slate-400 mt-1 mb-5 leading-relaxed">
-          Masukkan kata sandi profil Anda untuk membuka fitur aplikasi yang diizinkan
+          Masukkan kata sandi profil Anda
         </p>
 
         {/* Unlocked feedback */}
@@ -191,46 +171,12 @@ export function LockScreen({
           </form>
         )}
 
-        {/* Hints / Profiles overview */}
-        <div className="mt-5 pt-3 border-t border-slate-800/80 w-full flex flex-col gap-2 text-[11px] text-slate-400">
-          <div className="flex items-center justify-between text-[11px] text-slate-500">
-            <span>Kode sandi bebas (huruf & angka)</span>
-            <button
-              type="button"
-              onClick={() => setIsResetConfirmOpen(true)}
-              className="hover:text-cyan-400 underline underline-offset-2 transition-colors"
-            >
-              Reset ke agus123
-            </button>
-          </div>
+        {/* Footer Hint */}
+        <div className="mt-5 pt-3 border-t border-slate-800/80 w-full text-center">
+          <span className="text-[11px] text-slate-500">
+            Kode sandi bebas (huruf & angka)
+          </span>
         </div>
-
-        {/* Reset Confirmation Dialog */}
-        {isResetConfirmOpen && (
-          <div className="absolute inset-0 bg-slate-950/95 rounded-3xl p-5 flex flex-col justify-center items-center text-center animate-fade-in z-20">
-            <KeyRound className="w-10 h-10 text-amber-400 mb-2" />
-            <h4 className="text-xs font-bold text-white mb-1">Reset Password Master?</h4>
-            <p className="text-[11px] text-slate-400 mb-4 leading-relaxed">
-              Password Master akan dikembalikan ke default: <strong className="text-cyan-300 font-mono">agus123</strong> dengan akses ke semua fitur.
-            </p>
-            <div className="flex gap-2 w-full">
-              <button
-                type="button"
-                onClick={() => setIsResetConfirmOpen(false)}
-                className="flex-1 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 rounded-xl"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                onClick={executeReset}
-                className="flex-1 py-2 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl shadow-xs"
-              >
-                Ya, Reset
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
