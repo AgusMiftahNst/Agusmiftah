@@ -101,6 +101,12 @@ export function SimpleFinanceView({
     walletBalances[w] = (walletBalances[w] || 0) + delta;
   });
 
+  // Only display banks / e-wallets that actually have a balance
+  const activeWallets = WALLET_OPTIONS.filter((w) => {
+    const bal = walletBalances[w.id] || 0;
+    return bal !== 0;
+  });
+
   // Filtered transactions
   const filteredTransactions = transactions.filter((t) => {
     if (filterWallet === 'all') return true;
@@ -291,36 +297,44 @@ export function SimpleFinanceView({
               <span className="text-[10px] text-slate-400">BCA, Mandiri, DANA, OVO, dll</span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {WALLET_OPTIONS.slice(0, 6).map((w) => {
-                const bal = walletBalances[w.id] || 0;
-                return (
-                  <div
-                    key={w.id}
-                    onClick={() => setFilterWallet(filterWallet === w.id ? 'all' : w.id)}
-                    className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
-                      filterWallet === w.id
-                        ? 'border-amber-500 bg-amber-50/40 dark:bg-amber-950/30'
-                        : 'border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-850/60 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300">
-                        {w.name}
-                      </span>
-                      <w.icon className="w-3 h-3 text-slate-400" />
-                    </div>
-                    <span
-                      className={`text-xs font-mono font-bold block truncate ${
-                        bal >= 0 ? 'text-slate-900 dark:text-slate-100' : 'text-rose-500'
+            {activeWallets.length === 0 ? (
+              <div className="py-3 px-3 text-center bg-slate-50/60 dark:bg-slate-850/60 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Belum ada saldo terisi pada rekening bank atau e-wallet. Rekening akan otomatis muncul saat ada saldo.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {activeWallets.map((w) => {
+                  const bal = walletBalances[w.id] || 0;
+                  return (
+                    <div
+                      key={w.id}
+                      onClick={() => setFilterWallet(filterWallet === w.id ? 'all' : w.id)}
+                      className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
+                        filterWallet === w.id
+                          ? 'border-amber-500 bg-amber-50/40 dark:bg-amber-950/30'
+                          : 'border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-850/60 hover:border-slate-300'
                       }`}
                     >
-                      {formatRupiah(bal)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300">
+                          {w.name}
+                        </span>
+                        <w.icon className={`w-3.5 h-3.5 ${w.color}`} />
+                      </div>
+                      <span
+                        className={`text-xs font-mono font-bold block truncate ${
+                          bal >= 0 ? 'text-slate-900 dark:text-slate-100' : 'text-rose-500'
+                        }`}
+                      >
+                        {formatRupiah(bal)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Add Transaction Form */}
@@ -480,17 +494,17 @@ export function SimpleFinanceView({
                 >
                   Semua
                 </button>
-                {['BCA', 'Mandiri', 'DANA', 'OVO', 'Tunai'].map((wId) => (
+                {activeWallets.map((w) => (
                   <button
-                    key={wId}
-                    onClick={() => setFilterWallet(wId)}
-                    className={`text-[10px] px-2 py-0.5 rounded-full font-semibold transition-colors ${
-                      filterWallet === wId
+                    key={w.id}
+                    onClick={() => setFilterWallet(w.id)}
+                    className={`text-[10px] px-2.5 py-0.5 rounded-full font-semibold transition-colors shrink-0 ${
+                      filterWallet === w.id
                         ? 'bg-amber-600 text-white'
                         : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200'
                     }`}
                   >
-                    {wId}
+                    {w.name}
                   </button>
                 ))}
               </div>
