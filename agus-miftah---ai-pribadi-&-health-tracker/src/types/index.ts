@@ -73,6 +73,20 @@ export interface TransactionLog {
   wallet?: string; // 'BCA' | 'Mandiri' | 'BRI' | 'BNI' | 'DANA' | 'OVO' | 'GoPay' | 'ShopeePay' | 'Tunai'
 }
 
+export interface GoldAsset {
+  id: string;
+  type: 'antam' | 'galeri24' | 'ubs' | 'pegadaian' | 'perhiasan' | 'lainnya';
+  title: string; // e.g. 'Emas Antam LM 5 Gram', 'Emas Galeri 24 10 Gram'
+  weightGrams: number; // e.g. 5, 10.5
+  purchaseDate: string; // 'YYYY-MM-DD'
+  purchasePricePerGram: number; // e.g. 1250000
+  totalPurchasePrice: number; // total cost
+  currentEstPricePerGram?: number; // estimated current market / buyback price
+  notes?: string;
+  wallet?: string; // e.g. 'BCA', 'DANA', 'Tunai'
+  createdAt: number;
+}
+
 export interface FinancialGoal {
   id: string;
   title: string;
@@ -111,6 +125,7 @@ export interface AppState {
   healthChecks: HealthCheckRecord[];
   transactions: TransactionLog[];
   financialTargets?: FinancialGoal[];
+  goldAssets?: GoldAsset[];
   chatMessages: ChatMessage[];
   settings: UserSettings;
   serverUpdatedAt?: number;
