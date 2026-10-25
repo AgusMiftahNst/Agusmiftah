@@ -67,6 +67,11 @@ interface HomeViewProps {
   soundEnabled: boolean;
   displayMode?: 'auto' | 'mobile' | 'laptop';
   allowedTabs?: AppFeatureTab[];
+  adhanSoundEnabled?: boolean;
+  onToggleAdhanSound?: () => void;
+  isAdhanPlaying?: boolean;
+  onTestAdhan?: () => void;
+  onStopAdhan?: () => void;
 }
 
 export function HomeView({
@@ -88,7 +93,12 @@ export function HomeView({
   onNavigateTab,
   soundEnabled,
   displayMode = 'auto',
-  allowedTabs
+  allowedTabs,
+  adhanSoundEnabled = true,
+  onToggleAdhanSound,
+  isAdhanPlaying = false,
+  onTestAdhan,
+  onStopAdhan
 }: HomeViewProps) {
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
   const [isGpsLoading, setIsGpsLoading] = useState(false);
@@ -349,6 +359,45 @@ export function HomeView({
                       </button>
                     );
                   })}
+                </div>
+
+                {/* Suara Adzan & Notifikasi Otomatis Control */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-emerald-200/60 dark:border-emerald-800/50 text-[11px]">
+                  <div className="flex items-center gap-2">
+                    <span className="text-emerald-800 dark:text-emerald-300 font-medium text-[10px]">
+                      Suara Azan Otomatis:
+                    </span>
+                    <button
+                      onClick={onToggleAdhanSound}
+                      className={`px-2 py-0.5 rounded-md font-bold text-[10px] transition-all ${
+                        adhanSoundEnabled
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                      }`}
+                      title={adhanSoundEnabled ? 'Suara azan berbunyi saat waktu sholat tiba' : 'Suara azan dibisukan'}
+                    >
+                      {adhanSoundEnabled ? 'Aktif 🔊' : 'Bisu 🔇'}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {isAdhanPlaying ? (
+                      <button
+                        onClick={onStopAdhan}
+                        className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] flex items-center gap-1 shadow-xs transition-colors"
+                      >
+                        <span>⏹️ Hentikan Azan</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={onTestAdhan}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 hover:bg-emerald-200 dark:hover:bg-emerald-900 text-emerald-800 dark:text-emerald-200 font-bold text-[10px] flex items-center gap-1 border border-emerald-300/80 dark:border-emerald-800 transition-colors"
+                        title="Tes dengarkan suara adzan sekarang"
+                      >
+                        <span>▶️ Tes Suara Azan</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
