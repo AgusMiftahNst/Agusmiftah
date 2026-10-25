@@ -118,6 +118,101 @@ class SoundFX {
       osc.stop(now + offset + 0.4);
     });
   }
+
+  private adhanAudio: HTMLAudioElement | null = null;
+  private isAdhanPlayingState = false;
+
+  // Plays authentic adhan MP3 with fallback to melodic call synthesizer
+  playAdhan(onEnd?: () => void) {
+    if (typeof window === 'undefined') return;
+
+    this.stopAdhan();
+    this.isAdhanPlayingState = true;
+
+    try {
+      // High quality adhan MP3 from reliable Islamic CDN
+      const audio = new Audio('https://cdn.islamic.network/audio/adhan/ar.alafasy.mp3');
+      this.adhanAudio = audio;
+      audio.volume = 0.9;
+
+      audio.onended = () => {
+        this.isAdhanPlayingState = false;
+        if (onEnd) onEnd();
+      };
+
+      audio.onerror = () => {
+        // Fallback to offline web audio synthesized adhan
+        this.playSynthesizedAdhanSequence(onEnd);
+      };
+
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          this.playSynthesizedAdhanSequence(onEnd);
+        });
+      }
+    } catch {
+      this.playSynthesizedAdhanSequence(onEnd);
+    }
+  }
+
+  stopAdhan() {
+    if (this.adhanAudio) {
+      try {
+        this.adhanAudio.pause();
+        this.adhanAudio.currentTime = 0;
+      } catch {}
+      this.adhanAudio = null;
+    }
+    this.isAdhanPlayingState = false;
+  }
+
+  isAdhanPlaying(): boolean {
+    return this.isAdhanPlayingState;
+  }
+
+  // Melodic synthesized Adhan call (Allah hu Akbar harmonic notes) for 100% offline reliability
+  playSynthesizedAdhanSequence(onEnd?: () => void) {
+    const ctx = this.getContext();
+    if (!ctx) {
+      this.isAdhanPlayingState = false;
+      if (onEnd) onEnd();
+      return;
+    }
+
+    const now = ctx.currentTime;
+    // Harmonic notes evoking the traditional call to prayer (Maqam Bayati tones)
+    const adhanNotes = [
+      { freq: 440.00, dur: 1.2, delay: 0.0 },   // A4
+      { freq: 493.88, dur: 1.0, delay: 1.3 },   // B4
+      { freq: 523.25, dur: 1.8, delay: 2.4 },   // C5
+      { freq: 493.88, dur: 1.2, delay: 4.3 },   // B4
+      { freq: 440.00, dur: 2.2, delay: 5.6 }    // A4 (resolution)
+    ];
+
+    adhanNotes.forEach((note) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(note.freq, now + note.delay);
+
+      gain.gain.setValueAtTime(0, now + note.delay);
+      gain.gain.linearRampToValueAtTime(0.35, now + note.delay + 0.15);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + note.delay + note.dur);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now + note.delay);
+      osc.stop(now + note.delay + note.dur);
+    });
+
+    setTimeout(() => {
+      this.isAdhanPlayingState = false;
+      if (onEnd) onEnd();
+    }, 8000);
+  }
 }
 
 export const sound = new SoundFX();
