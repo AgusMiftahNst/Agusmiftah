@@ -110,6 +110,23 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export interface PrayerTimes {
+  subuh: string;
+  terbit: string;
+  dzuhur: string;
+  ashar: string;
+  maghrib: string;
+  isya: string;
+}
+
+export interface NextPrayerInfo {
+  name: string;
+  time: string;
+  remainingMinutes: number;
+  countdownText: string;
+  isPassedToday: boolean;
+}
+
 export interface PrayerLocationSettings {
   cityName: string;
   latitude: number;
