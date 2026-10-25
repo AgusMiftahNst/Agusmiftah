@@ -27,10 +27,18 @@ import {
   HealthCheckRecord,
   TransactionLog,
   FinancialGoal,
+  GoldAsset,
   ChatMessage,
   AccessProfile,
-  AppFeatureTab
+  AppFeatureTab,
+  PrayerLocationSettings
 } from './types';
+import {
+  calculatePrayerTimes,
+  DEFAULT_PRAYER_LOCATION,
+  getRoutineWeekKey,
+  PrayerTimes
+} from './utils/prayerTimes';
 import {
   loadAppState,
   saveAppState,
@@ -413,7 +421,12 @@ export default function App() {
       const activities = (prev.activities || []).map((a) => {
         if (a.id !== id) return a;
         const comps = a.routineCompletions || {};
-        const key = a.activityType === 'rutin_bulanan' ? currentMonth : todayDate;
+        let key = todayDate;
+        if (a.activityType === 'rutin_bulanan') {
+          key = currentMonth;
+        } else if (a.activityType === 'rutin_mingguan') {
+          key = getRoutineWeekKey(todayDate, a.weeklyInterval || 1);
+        }
         const isDone = Boolean(comps[key]);
         return {
           ...a,
@@ -434,7 +447,11 @@ export default function App() {
     const act = (appState.activities || []).find((a) => a.id === id);
     if (!act) return;
 
-    if (act.activityType === 'rutin_harian' || act.activityType === 'rutin_bulanan') {
+    if (
+      act.activityType === 'rutin_harian' ||
+      act.activityType === 'rutin_mingguan' ||
+      act.activityType === 'rutin_bulanan'
+    ) {
       handleToggleRoutine(id);
       return;
     }
@@ -602,6 +619,51 @@ export default function App() {
     updateAndSyncState((prev) => ({
       ...prev,
       financialTargets: (prev.financialTargets || []).filter((g) => g.id !== id)
+    }));
+  };
+
+  // Gold Assets mutations
+  const handleAddGoldAsset = (newAsset: Omit<GoldAsset, 'id' | 'createdAt'>) => {
+    const asset: GoldAsset = {
+      ...newAsset,
+      id: `gold-${Date.now()}`,
+      createdAt: Date.now()
+    };
+    updateAndSyncState((prev) => ({
+      ...prev,
+      goldAssets: [asset, ...(prev.goldAssets || [])]
+    }));
+  };
+
+  const handleUpdateGoldAsset = (updated: GoldAsset) => {
+    updateAndSyncState((prev) => ({
+      ...prev,
+      goldAssets: (prev.goldAssets || []).map((g) => (g.id === updated.id ? updated : g))
+    }));
+  };
+
+  const handleDeleteGoldAsset = (id: string) => {
+    updateAndSyncState((prev) => ({
+      ...prev,
+      goldAssets: (prev.goldAssets || []).filter((g) => g.id !== id)
+    }));
+  };
+
+  const handleConsultJarvisGold = (promptText?: string) => {
+    handleSelectTab('ai');
+    const question = promptText || 'Tolong analisis keuntungan dan kerugian jika saya menjual emas saya sekarang, dan apa saran JARVIS?';
+    setTimeout(() => {
+      handleSendMessage(question);
+    }, 350);
+  };
+
+  const handleChangePrayerLocation = (newLoc: PrayerLocationSettings) => {
+    updateAndSyncState((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        prayerLocation: newLoc
+      }
     }));
   };
 
@@ -840,7 +902,19 @@ export default function App() {
         title: h.title,
         progress: `${(h.history && h.history[todayDate]) || 0}/${h.targetCount || 1} ${h.unit || ''}`
       })),
-      recentTransactions: appState.transactions.slice(0, 5)
+      recentTransactions: appState.transactions.slice(0, 5),
+      goldAssets: (appState.goldAssets || []).map((g) => ({
+        id: g.id,
+        type: g.type,
+        title: g.title,
+        weightGrams: g.weightGrams,
+        purchaseDate: g.purchaseDate,
+        purchasePricePerGram: g.purchasePricePerGram,
+        totalPurchasePrice: g.totalPurchasePrice,
+        currentEstPricePerGram: g.currentEstPricePerGram,
+        notes: g.notes,
+        wallet: g.wallet
+      }))
     };
 
     let replyText: string | null = null;
@@ -957,6 +1031,8 @@ export default function App() {
             transactions={appState.transactions}
             financialTargets={appState.financialTargets || []}
             reminders={appState.reminders}
+            prayerLocation={appState.settings.prayerLocation || DEFAULT_PRAYER_LOCATION}
+            onChangePrayerLocation={handleChangePrayerLocation}
             onToggleActivity={requestToggleActivity}
             onToggleRoutine={handleToggleRoutine}
             onToggleHabit={handleToggleHabit}
@@ -1002,12 +1078,17 @@ export default function App() {
           <SimpleFinanceView
             transactions={appState.transactions}
             financialTargets={appState.financialTargets || []}
+            goldAssets={appState.goldAssets || []}
             todayDate={todayDate}
             onAddTransaction={handleAddTransaction}
             onDeleteTransaction={requestDeleteTransaction}
             onAddFinancialTarget={handleAddFinancialTarget}
             onUpdateFinancialTarget={handleUpdateFinancialTarget}
             onDeleteFinancialTarget={handleDeleteFinancialTarget}
+            onAddGoldAsset={handleAddGoldAsset}
+            onUpdateGoldAsset={handleUpdateGoldAsset}
+            onDeleteGoldAsset={handleDeleteGoldAsset}
+            onConsultJarvisGold={handleConsultJarvisGold}
             soundEnabled={appState.settings.soundEnabled}
           />
         )}
