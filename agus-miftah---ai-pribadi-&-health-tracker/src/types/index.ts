@@ -27,6 +27,7 @@ export interface ActivityItem {
   weeklyDay?: number; // 0 = Minggu, 1 = Senin, ... 6 = Sabtu
   prayerType?: 'subuh' | 'dzuhur' | 'ashar' | 'maghrib' | 'isya';
   routineCompletions?: Record<string, boolean>; // 'YYYY-MM-DD' => daily, 'YYYY-Wxx' / 'YYYY-2Wxx' => weekly, 'YYYY-MM' => monthly
+  reminderMinutesBefore?: number; // 0 = tepat waktu, 15, 30, 60 mnt sebelum
 }
 
 export interface HabitItem {
@@ -143,6 +144,7 @@ export interface UserSettings {
   appPin?: string;
   isPinRequired?: boolean;
   notifyHoursBefore?: number;
+  adhanSoundEnabled?: boolean; // Suara Azan otomatis saat waktu sholat tiba
   accessProfiles?: AccessProfile[];
   prayerLocation?: PrayerLocationSettings;
 }
