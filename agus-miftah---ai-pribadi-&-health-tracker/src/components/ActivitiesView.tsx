@@ -17,13 +17,15 @@ import {
   Sparkles,
   Repeat,
   Moon,
-  CalendarRange
+  CalendarRange,
+  CalendarDays
 } from 'lucide-react';
 import { ActivityItem } from '../types';
 import { getActivityUrgency, getTodayDateString, formatDateIndonesian } from '../utils/storage';
 import { sound } from '../utils/audio';
 import { EditActivityModal } from './EditActivityModal';
 import { AutoLinkText, QuickUrlButtons } from './AutoLinkText';
+import { getRoutineWeekKey, getWeeklyDayName } from '../utils/prayerTimes';
 
 interface ActivitiesViewProps {
   activities: ActivityItem[];
@@ -56,7 +58,7 @@ export function ActivitiesView({
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
   // Filters for Rutin
-  const [routineFilter, setRoutineFilter] = useState<'all' | 'harian' | 'bulanan' | 'ibadah'>('all');
+  const [routineFilter, setRoutineFilter] = useState<'all' | 'harian' | 'mingguan' | 'bulanan' | 'ibadah'>('all');
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<ActivityItem | null>(null);
@@ -65,6 +67,8 @@ export function ActivitiesView({
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<ActivityItem['category']>('kerjaan');
   const [activityType, setActivityType] = useState<ActivityItem['activityType']>('deadline');
+  const [weeklyInterval, setWeeklyInterval] = useState<1 | 2>(1);
+  const [weeklyDay, setWeeklyDay] = useState<number>(5); // default Jumat
   const [dueDate, setDueDate] = useState(getTodayDateString(0));
   const [dueTime, setDueTime] = useState('');
   const [priority, setPriority] = useState<ActivityItem['priority']>('sedang');
@@ -72,10 +76,13 @@ export function ActivitiesView({
 
   const currentMonth = todayDate.slice(0, 7); // 'YYYY-MM'
 
-  // Separate deadline vs routine
+  // Separate deadline vs routine (including weekly)
   const deadlineActivities = activities.filter((a) => !a.activityType || a.activityType === 'deadline');
   const routineActivities = activities.filter(
-    (a) => a.activityType === 'rutin_harian' || a.activityType === 'rutin_bulanan'
+    (a) =>
+      a.activityType === 'rutin_harian' ||
+      a.activityType === 'rutin_mingguan' ||
+      a.activityType === 'rutin_bulanan'
   );
 
   const pendingDeadlineCount = deadlineActivities.filter((a) => !a.completed).length;
@@ -100,6 +107,7 @@ export function ActivitiesView({
   // Filtered Routine Activities
   const filteredRoutines = routineActivities.filter((a) => {
     if (routineFilter === 'harian') return a.activityType === 'rutin_harian';
+    if (routineFilter === 'mingguan') return a.activityType === 'rutin_mingguan';
     if (routineFilter === 'bulanan') return a.activityType === 'rutin_bulanan';
     if (routineFilter === 'ibadah') return a.category === 'ibadah';
     return true;
@@ -113,6 +121,8 @@ export function ActivitiesView({
       title: title.trim(),
       category,
       activityType,
+      weeklyInterval: activityType === 'rutin_mingguan' ? weeklyInterval : undefined,
+      weeklyDay: activityType === 'rutin_mingguan' ? weeklyDay : undefined,
       dueDate: dueDate || getTodayDateString(0),
       dueTime: dueTime ? dueTime : undefined,
       completed: false,
@@ -127,6 +137,8 @@ export function ActivitiesView({
     setTitle('');
     setCategory('kerjaan');
     setActivityType('deadline');
+    setWeeklyInterval(1);
+    setWeeklyDay(5);
     setDueDate(getTodayDateString(0));
     setDueTime('');
     setPriority('sedang');
@@ -156,6 +168,10 @@ export function ActivitiesView({
     const comps = act.routineCompletions || {};
     if (act.activityType === 'rutin_bulanan') {
       return Boolean(comps[currentMonth]);
+    }
+    if (act.activityType === 'rutin_mingguan') {
+      const weekKey = getRoutineWeekKey(todayDate, act.weeklyInterval || 1);
+      return Boolean(comps[weekKey]);
     }
     return Boolean(comps[todayDate]);
   };
@@ -436,6 +452,7 @@ export function ActivitiesView({
             {[
               { id: 'all', label: 'Semua Rutin' },
               { id: 'harian', label: '🔄 Rutin Harian' },
+              { id: 'mingguan', label: '🗓️ Rutin Mingguan' },
               { id: 'bulanan', label: '📅 Rutin Bulanan' },
               { id: 'ibadah', label: '🌙 Rutin Ibadah' }
             ].map((rf) => (
@@ -516,6 +533,20 @@ export function ActivitiesView({
               filteredRoutines.map((act) => {
                 const isDone = isRoutineCompleted(act);
                 const isMonthly = act.activityType === 'rutin_bulanan';
+                const isWeekly = act.activityType === 'rutin_mingguan';
+
+                let periodTitle = 'Rutin Harian';
+                let completionText = isDone ? 'Selesai Hari Ini ✨' : 'Belum Hari Ini';
+
+                if (isMonthly) {
+                  periodTitle = 'Rutin Bulanan';
+                  completionText = isDone ? 'Selesai Bulan Ini ✨' : 'Belum Bulan Ini';
+                } else if (isWeekly) {
+                  const freq = act.weeklyInterval === 2 ? '2 Minggu 1x' : 'Seminggu 1x';
+                  const day = act.weeklyDay !== undefined ? ` · ${getWeeklyDayName(act.weeklyDay)}` : '';
+                  periodTitle = `${freq}${day}`;
+                  completionText = isDone ? 'Selesai Pekan Ini ✨' : 'Belum Pekan Ini';
+                }
 
                 return (
                   <div
@@ -527,7 +558,7 @@ export function ActivitiesView({
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      {/* Routine Checkbox - Toggles today or this month */}
+                      {/* Routine Checkbox */}
                       <button
                         onClick={() => {
                           if (onToggleRoutine) {
@@ -537,15 +568,7 @@ export function ActivitiesView({
                           }
                         }}
                         className="mt-0.5 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 active:scale-90 transition-transform p-0.5"
-                        title={
-                          isDone
-                            ? isMonthly
-                              ? 'Sudah selesai bulan ini (klik untuk ubah)'
-                              : 'Sudah selesai hari ini (klik untuk ubah)'
-                            : isMonthly
-                            ? 'Tandai selesai bulan ini'
-                            : 'Tandai selesai hari ini'
-                        }
+                        title={isDone ? `${completionText} (klik untuk ubah)` : `Tandai selesai`}
                       >
                         {isDone ? (
                           <CheckSquare className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
@@ -558,8 +581,14 @@ export function ActivitiesView({
                         <div className="flex items-center gap-2 flex-wrap">
                           {/* Routine Type Badge */}
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 flex items-center gap-1">
-                            {isMonthly ? <CalendarRange className="w-3 h-3" /> : <Repeat className="w-3 h-3 text-emerald-500" />}
-                            {isMonthly ? 'Rutin Bulanan' : 'Rutin Harian'}
+                            {isMonthly ? (
+                              <CalendarRange className="w-3 h-3 text-indigo-500" />
+                            ) : isWeekly ? (
+                              <Calendar className="w-3 h-3 text-amber-500" />
+                            ) : (
+                              <Repeat className="w-3 h-3 text-emerald-500" />
+                            )}
+                            {periodTitle}
                           </span>
 
                           <span
@@ -574,11 +603,11 @@ export function ActivitiesView({
                           {isDone ? (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 flex items-center gap-1 border border-emerald-200">
                               <CheckCircle2 className="w-3 h-3" />
-                              {isMonthly ? 'Selesai Bulan Ini ✨' : 'Selesai Hari Ini ✨'}
+                              {completionText}
                             </span>
                           ) : (
                             <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200">
-                              {isMonthly ? 'Belum Bulan Ini' : 'Belum Hari Ini'}
+                              {completionText}
                             </span>
                           )}
                         </div>
@@ -651,7 +680,7 @@ export function ActivitiesView({
                     Catat Kegiatan Baru
                   </h3>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Pilih tipe deadline atau aktifitas rutin (harian/bulanan)
+                    Pilih tipe deadline atau aktifitas rutin (harian/mingguan/bulanan)
                   </p>
                 </div>
               </div>
@@ -670,10 +699,11 @@ export function ActivitiesView({
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
                   Tipe Kegiatan
                 </label>
-                <div className="grid grid-cols-3 gap-1.5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                   {[
                     { id: 'deadline', label: 'Deadline Tugas', icon: Clock },
                     { id: 'rutin_harian', label: 'Rutin Harian', icon: Repeat },
+                    { id: 'rutin_mingguan', label: 'Rutin Mingguan', icon: CalendarDays },
                     { id: 'rutin_bulanan', label: 'Rutin Bulanan', icon: CalendarRange }
                   ].map((t) => (
                     <button
@@ -693,6 +723,59 @@ export function ActivitiesView({
                 </div>
               </div>
 
+              {/* Rutin Mingguan Options: Frekuensi & Hari */}
+              {activityType === 'rutin_mingguan' && (
+                <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/70 dark:border-indigo-800/60 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-indigo-950 dark:text-indigo-200">
+                      Jadwal Rutinitas Mingguan
+                    </span>
+                    <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">
+                      Pilihan Periode
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Frekuensi
+                      </label>
+                      <select
+                        value={weeklyInterval}
+                        onChange={(e) => setWeeklyInterval(Number(e.target.value) as 1 | 2)}
+                        className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-medium"
+                      >
+                        <option value={1}>Seminggu Sekali (Tiap Pekan)</option>
+                        <option value={2}>Dua Minggu Sekali (2 Pekan 1x)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Hari Rutinitas
+                      </label>
+                      <select
+                        value={weeklyDay}
+                        onChange={(e) => setWeeklyDay(Number(e.target.value))}
+                        className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-medium"
+                      >
+                        <option value={1}>Senin</option>
+                        <option value={2}>Selasa</option>
+                        <option value={3}>Rabu</option>
+                        <option value={4}>Kamis</option>
+                        <option value={5}>Jumat</option>
+                        <option value={6}>Sabtu</option>
+                        <option value={0}>Minggu</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-indigo-700/80 dark:text-indigo-300/80">
+                    💡 Centang rutinitas ini akan otomatis di-reset saat periode {weeklyInterval === 2 ? '2 pekan baru' : 'pekan baru'} dimulai.
+                  </p>
+                </div>
+              )}
+
               {/* Title */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -704,6 +787,8 @@ export function ActivitiesView({
                   placeholder={
                     activityType === 'rutin_harian'
                       ? 'Contoh: Sholat Fardhu 5 Waktu, Minum Vitamin, Daily Standup...'
+                      : activityType === 'rutin_mingguan'
+                      ? 'Contoh: Sholat Sunnah Jumat, Bersih-bersih Rumah, Evaluasi Mingguan...'
                       : activityType === 'rutin_bulanan'
                       ? 'Contoh: Bayar Listrik & Wifi, Rekap Keuangan Bulanan...'
                       : 'Contoh: Buat presentasi klien, kirim invoice...'
