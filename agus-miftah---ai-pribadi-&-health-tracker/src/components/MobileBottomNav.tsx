@@ -34,14 +34,13 @@ export function MobileBottomNav({
     },
     { id: 'ai', label: 'JARVIS', isSpecial: true },
     { id: 'health', label: 'Kesehatan', icon: HeartPulse },
-    { id: 'finance', label: 'Keuangan', icon: Wallet },
-    { id: 'reminders', label: 'Pengingat', icon: Bell }
+    { id: 'finance', label: 'Keuangan', icon: Wallet }
   ];
 
   // Filter tabs based on active profile permissions if specified
   const visibleTabs = allowedTabs && allowedTabs.length > 0
     ? allTabs.filter((t) => allowedTabs.includes(t.id))
-    : allTabs.filter((t) => t.id !== 'reminders'); // default view excludes standalone reminders button if 5 tabs already show
+    : allTabs;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800 transition-colors">
