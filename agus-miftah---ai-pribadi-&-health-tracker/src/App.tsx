@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { MobileHeader } from './components/MobileHeader';
+import { SideDrawer } from './components/SideDrawer';
 import { MobileBottomNav, MainTabType } from './components/MobileBottomNav';
 import { HomeView } from './components/HomeView';
 import { HealthView } from './components/HealthView';
@@ -73,6 +74,7 @@ export default function App() {
   const [appState, setAppState] = useState<AppState>(() => loadAppState());
   const [currentTab, setCurrentTab] = useState<MainTabType>('home');
   const [syncStatus, setSyncStatus] = useState<SyncStateStatus>('synced');
+  const [isSideDrawerOpen, setIsSideDrawerOpen] = useState(false);
   const [isHealthCheckOpen, setIsHealthCheckOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isPasscodeManagerOpen, setIsPasscodeManagerOpen] = useState(false);
@@ -117,6 +119,35 @@ export default function App() {
   const handleToggleDark = () => {
     setIsDark((prev) => !prev);
   };
+
+  // Swipe from left edge of screen to open SideDrawer on mobile
+  useEffect(() => {
+    let startX = 0;
+    let startY = 0;
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+      }
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.changedTouches.length === 1) {
+        const deltaX = e.changedTouches[0].clientX - startX;
+        const deltaY = Math.abs(e.changedTouches[0].clientY - startY);
+        // If swiping right starting from left screen edge (< 40px)
+        if (startX < 40 && deltaX > 55 && deltaY < 80) {
+          setIsSideDrawerOpen(true);
+        }
+      }
+    };
+
+    window.addEventListener('touchstart', onTouchStart, { passive: true });
+    window.addEventListener('touchend', onTouchEnd, { passive: true });
+    return () => {
+      window.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchend', onTouchEnd);
+    };
+  }, []);
 
   // Check URL hash on load for instant QR Code / Sync Link pairing from Laptop to HP
   useEffect(() => {
@@ -998,20 +1029,10 @@ export default function App() {
 
       {/* Mobile-Friendly Top Bar */}
       <MobileHeader
+        onOpenSideMenu={() => setIsSideDrawerOpen(true)}
         syncStatus={syncStatus}
-        onOpenSyncModal={() => setIsSyncModalOpen(true)}
-        isDark={isDark}
-        onToggleDark={handleToggleDark}
-        soundEnabled={appState.settings.soundEnabled}
-        onToggleSound={handleToggleSound}
-        onOpenAIChat={() => handleSelectTab('ai')}
-        displayMode={appState.settings.displayMode || 'auto'}
-        onChangeDisplayMode={handleChangeDisplayMode}
-        onLockApp={() => setIsLocked(true)}
-        onOpenPasscodeManager={() => setIsPasscodeManagerOpen(true)}
-        onRequestNotifications={handleRequestNotifications}
-        notificationsEnabled={Boolean(appState.settings.notificationsEnabled)}
         activeProfile={activeProfile}
+        displayMode={appState.settings.displayMode || 'auto'}
       />
 
       {/* Main Container - Optimized for Mobile & Laptop Wide Views */}
@@ -1177,6 +1198,29 @@ export default function App() {
         savedPin={appState.settings.appPin || 'agus123'}
         onUnlock={handleUnlock}
         onResetToDefault={handleResetSecurityToDefault}
+      />
+
+      {/* Side Navigation & Settings Drawer */}
+      <SideDrawer
+        isOpen={isSideDrawerOpen}
+        onClose={() => setIsSideDrawerOpen(false)}
+        currentTab={currentTab}
+        onSelectTab={handleSelectTab}
+        syncStatus={syncStatus}
+        onOpenSyncModal={() => setIsSyncModalOpen(true)}
+        isDark={isDark}
+        onToggleDark={handleToggleDark}
+        soundEnabled={appState.settings.soundEnabled}
+        onToggleSound={handleToggleSound}
+        displayMode={appState.settings.displayMode || 'auto'}
+        onChangeDisplayMode={handleChangeDisplayMode}
+        onLockApp={() => setIsLocked(true)}
+        onOpenPasscodeManager={() => setIsPasscodeManagerOpen(true)}
+        activeProfile={activeProfile}
+        notificationsEnabled={Boolean(appState.settings.notificationsEnabled)}
+        onRequestNotifications={handleRequestNotifications}
+        pendingActivitiesCount={pendingActivitiesCount}
+        remindersCount={(appState.reminders || []).filter((r) => r.enabled).length}
       />
 
       {/* Mobile-First Bottom Navigation with role-based tab filtering */}
