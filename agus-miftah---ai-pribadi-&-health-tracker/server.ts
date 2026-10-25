@@ -17,6 +17,17 @@ const DATA_FILE = path.join(__dirname, 'agus_miftah_store.json');
 
 app.use(express.json({ limit: '10mb' }));
 
+// CORS middleware so any mobile browser or LAN IP can access without restriction
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Cache-Control, Pragma');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 // Server-side Gemini client using @google/genai
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -40,6 +51,27 @@ function broadcastStateUpdate(data: any) {
     }
   }
 }
+
+// API: Server health and sync status info
+app.get('/api/info', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  let currentRevision = 0;
+  let serverUpdatedAt = 0;
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const existing = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+      currentRevision = Number(existing.syncRevision) || 0;
+      serverUpdatedAt = Number(existing.serverUpdatedAt) || 0;
+    }
+  } catch {}
+  res.json({
+    status: 'online',
+    serverTime: Date.now(),
+    syncRevision: currentRevision,
+    serverUpdatedAt,
+    port: PORT,
+  });
+});
 
 // API: Stream real-time state updates to all connected devices (HP, Laptop)
 app.get('/api/state/stream', (req, res) => {
@@ -99,9 +131,19 @@ app.post('/api/state', (req, res) => {
   try {
     const data = req.body;
     const now = Date.now();
+    let currentRevision = 0;
+    try {
+      if (fs.existsSync(DATA_FILE)) {
+        const existing = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+        currentRevision = Number(existing.syncRevision) || 0;
+      }
+    } catch {}
+
+    const syncRevision = currentRevision + 1;
     const serverUpdatedAt = Math.max(now, (data.serverUpdatedAt || 0) + 1);
     const toSave = {
       ...data,
+      syncRevision,
       serverUpdatedAt,
     };
     fs.writeFileSync(DATA_FILE, JSON.stringify(toSave, null, 2), 'utf-8');
@@ -109,7 +151,7 @@ app.post('/api/state', (req, res) => {
     // Broadcast instantly to all connected phones, tablets & laptops
     broadcastStateUpdate(toSave);
 
-    return res.json({ success: true, serverUpdatedAt: toSave.serverUpdatedAt });
+    return res.json({ success: true, serverUpdatedAt: toSave.serverUpdatedAt, syncRevision: toSave.syncRevision });
   } catch (err) {
     console.error('Error saving data file:', err);
     return res.status(500).json({ error: 'Gagal menyimpan ke server' });
@@ -133,6 +175,7 @@ Tugas & Kemampuanmu:
 4. Jika ditanya tentang makanan atau hasil skrining lab, berikan analisa ringkas dan jelas yang mudah dipahami di layar HP.
 5. Format jawaban selalu ringkas, terstruktur, rapi, dan nyaman dibaca (hindari paragraf panjang yang membosankan).
 6. Berikan motivasi produktif dan dorongan positif.
+7. Membantu analisis portofolio aset emas/logam mulia (Emas Antam LM, Galeri 24 Pegadaian, UBS, dll). Hitung untung/rugi (capital gain) dari selisih modal beli vs estimasi harga buyback pasar hari ini, persentase keuntungan, estimasi pajak PPh 22 (0.45%), dan beri rekomendasi apakah bijak untuk HOLD atau jual sesuai tujuan finansial.
 
 Konteks data pengguna saat ini:
 ${JSON.stringify(userContext || {})}`;
