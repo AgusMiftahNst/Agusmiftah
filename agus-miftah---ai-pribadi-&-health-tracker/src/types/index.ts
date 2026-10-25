@@ -22,8 +22,11 @@ export interface ActivityItem {
   notes?: string;
   createdAt: number;
   completedAt?: number;
-  activityType?: 'deadline' | 'rutin_harian' | 'rutin_bulanan';
-  routineCompletions?: Record<string, boolean>; // 'YYYY-MM-DD' => true for daily, 'YYYY-MM' => true for monthly
+  activityType?: 'deadline' | 'rutin_harian' | 'rutin_mingguan' | 'rutin_bulanan';
+  weeklyInterval?: 1 | 2; // 1 = seminggu sekali, 2 = dua minggu sekali
+  weeklyDay?: number; // 0 = Minggu, 1 = Senin, ... 6 = Sabtu
+  prayerType?: 'subuh' | 'dzuhur' | 'ashar' | 'maghrib' | 'isya';
+  routineCompletions?: Record<string, boolean>; // 'YYYY-MM-DD' => daily, 'YYYY-Wxx' / 'YYYY-2Wxx' => weekly, 'YYYY-MM' => monthly
 }
 
 export interface HabitItem {
@@ -107,6 +110,14 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export interface PrayerLocationSettings {
+  cityName: string;
+  latitude: number;
+  longitude: number;
+  timezone: number; // e.g. 7 for WIB, 8 for WITA, 9 for WIT
+  autoLocation?: boolean;
+}
+
 export interface UserSettings {
   userName: string;
   soundEnabled: boolean;
@@ -116,6 +127,7 @@ export interface UserSettings {
   isPinRequired?: boolean;
   notifyHoursBefore?: number;
   accessProfiles?: AccessProfile[];
+  prayerLocation?: PrayerLocationSettings;
 }
 
 export interface AppState {
