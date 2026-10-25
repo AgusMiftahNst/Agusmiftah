@@ -1,21 +1,6 @@
-import { PrayerLocationSettings } from '../types';
+import { PrayerLocationSettings, PrayerTimes, NextPrayerInfo } from '../types';
 
-export interface PrayerTimes {
-  subuh: string;
-  terbit: string;
-  dzuhur: string;
-  ashar: string;
-  maghrib: string;
-  isya: string;
-}
-
-export interface NextPrayerInfo {
-  name: string;
-  time: string;
-  remainingMinutes: number;
-  countdownText: string;
-  isPassedToday: boolean;
-}
+export type { PrayerTimes, NextPrayerInfo };
 
 export const INDONESIA_CITIES: PrayerLocationSettings[] = [
   // Papua & Maluku (WIT - UTC+9)
