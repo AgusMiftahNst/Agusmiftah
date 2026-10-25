@@ -21,6 +21,9 @@ export function EditActivityModal({
   const [category, setCategory] = useState<ActivityItem['category']>('kerjaan');
   const [dueDate, setDueDate] = useState(getTodayDateString(0));
   const [dueTime, setDueTime] = useState('');
+  const [activityType, setActivityType] = useState<ActivityItem['activityType']>('deadline');
+  const [weeklyInterval, setWeeklyInterval] = useState<1 | 2>(1);
+  const [weeklyDay, setWeeklyDay] = useState<number>(5); // default Jumat
   const [priority, setPriority] = useState<ActivityItem['priority']>('sedang');
   const [notes, setNotes] = useState('');
 
@@ -29,6 +32,9 @@ export function EditActivityModal({
     if (activity) {
       setTitle(activity.title || '');
       setCategory(activity.category || 'kerjaan');
+      setActivityType(activity.activityType || 'deadline');
+      setWeeklyInterval(activity.weeklyInterval === 2 ? 2 : 1);
+      setWeeklyDay(typeof activity.weeklyDay === 'number' ? activity.weeklyDay : 5);
       setDueDate(activity.dueDate || getTodayDateString(0));
       setDueTime(activity.dueTime || '');
       setPriority(activity.priority || 'sedang');
@@ -57,6 +63,9 @@ export function EditActivityModal({
       ...activity,
       title: title.trim(),
       category,
+      activityType,
+      weeklyInterval: activityType === 'rutin_mingguan' ? weeklyInterval : undefined,
+      weeklyDay: activityType === 'rutin_mingguan' ? weeklyDay : undefined,
       dueDate: dueDate || getTodayDateString(0),
       dueTime: dueTime ? dueTime : undefined,
       priority,
@@ -118,8 +127,8 @@ export function EditActivityModal({
             />
           </div>
 
-          {/* Kategori & Prioritas */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Kategori, Tipe, Prioritas */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             <div className="space-y-1.5">
               <label className="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1">
                 <Tag className="w-3.5 h-3.5 text-slate-400" />
@@ -131,11 +140,28 @@ export function EditActivityModal({
                 className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-xs capitalize"
               >
                 <option value="kerjaan">Kerjaan</option>
+                <option value="ibadah">Ibadah & Spiritual</option>
                 <option value="kesehatan">Kesehatan</option>
-                <option value="pribadi">Pribadi</option>
                 <option value="keuangan">Keuangan</option>
                 <option value="belajar">Belajar</option>
+                <option value="pribadi">Pribadi</option>
                 <option value="lainnya">Lainnya</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1">
+                Tipe Kegiatan
+              </label>
+              <select
+                value={activityType}
+                onChange={(e) => setActivityType(e.target.value as ActivityItem['activityType'])}
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-xs"
+              >
+                <option value="deadline">Deadline (Berbatas Waktu)</option>
+                <option value="rutin_harian">Rutin Harian (Tiap Hari)</option>
+                <option value="rutin_mingguan">Rutin Mingguan (1x / 2x Pekan)</option>
+                <option value="rutin_bulanan">Rutin Bulanan (Tiap Bulan)</option>
               </select>
             </div>
 
@@ -155,6 +181,51 @@ export function EditActivityModal({
               </select>
             </div>
           </div>
+
+          {/* Pengaturan Khusus Rutin Mingguan: Seminggu 1x atau 2 Minggu 1x & Hari */}
+          {activityType === 'rutin_mingguan' && (
+            <div className="p-3 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/60 rounded-xl space-y-2.5 animate-in fade-in">
+              <div className="font-semibold text-amber-900 dark:text-amber-200 text-[11px] flex items-center justify-between">
+                <span>Pengaturan Rutinitas Mingguan</span>
+                <span className="text-[10px] font-normal text-amber-700 dark:text-amber-300">Siklus berulang</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] text-slate-600 dark:text-slate-300 mb-1 font-medium">
+                    Frekuensi Siklus
+                  </label>
+                  <select
+                    value={weeklyInterval}
+                    onChange={(e) => setWeeklyInterval(Number(e.target.value) as 1 | 2)}
+                    className="w-full px-2.5 py-2 rounded-lg border border-amber-300/80 dark:border-amber-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs"
+                  >
+                    <option value={1}>Seminggu Sekali (1x / pekan)</option>
+                    <option value={2}>Dua Minggu Sekali (1x / 2 pekan)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] text-slate-600 dark:text-slate-300 mb-1 font-medium">
+                    Pilihan Hari
+                  </label>
+                  <select
+                    value={weeklyDay}
+                    onChange={(e) => setWeeklyDay(Number(e.target.value))}
+                    className="w-full px-2.5 py-2 rounded-lg border border-amber-300/80 dark:border-amber-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs"
+                  >
+                    <option value={0}>Setiap Hari Minggu</option>
+                    <option value={1}>Setiap Hari Senin</option>
+                    <option value={2}>Setiap Hari Selasa</option>
+                    <option value={3}>Setiap Hari Rabu</option>
+                    <option value={4}>Setiap Hari Kamis</option>
+                    <option value={5}>Setiap Hari Jumat</option>
+                    <option value={6}>Setiap Hari Sabtu</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Tanggal & Jam Tenggat */}
           <div className="grid grid-cols-2 gap-3">
