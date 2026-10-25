@@ -73,6 +73,7 @@ export function ActivitiesView({
   const [dueTime, setDueTime] = useState('');
   const [priority, setPriority] = useState<ActivityItem['priority']>('sedang');
   const [notes, setNotes] = useState('');
+  const [reminderMinutesBefore, setReminderMinutesBefore] = useState<number>(15);
 
   const currentMonth = todayDate.slice(0, 7); // 'YYYY-MM'
 
@@ -125,6 +126,7 @@ export function ActivitiesView({
       weeklyDay: activityType === 'rutin_mingguan' ? weeklyDay : undefined,
       dueDate: dueDate || getTodayDateString(0),
       dueTime: dueTime ? dueTime : undefined,
+      reminderMinutesBefore: dueTime ? reminderMinutesBefore : undefined,
       completed: false,
       priority,
       notes: notes.trim() ? notes.trim() : undefined,
@@ -141,6 +143,7 @@ export function ActivitiesView({
     setWeeklyDay(5);
     setDueDate(getTodayDateString(0));
     setDueTime('');
+    setReminderMinutesBefore(15);
     setPriority('sedang');
     setNotes('');
     setIsAddModalOpen(false);
@@ -863,6 +866,29 @@ export function ActivitiesView({
                       className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
+                </div>
+              )}
+
+              {/* Pengingat Sebelum Jam Deadline */}
+              {activityType === 'deadline' && dueTime && (
+                <div className="p-3 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/60 rounded-xl space-y-1.5 animate-in fade-in">
+                  <label className="font-semibold text-amber-950 dark:text-amber-200 flex items-center justify-between text-xs">
+                    <span>Waktu Pengingat Notifikasi</span>
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400 font-normal">Alarm & getar sebelum jamnya</span>
+                  </label>
+                  <select
+                    value={reminderMinutesBefore}
+                    onChange={(e) => setReminderMinutesBefore(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-lg border border-amber-300/80 dark:border-amber-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                  >
+                    <option value={0}>Tepat waktu (saat jam tiba)</option>
+                    <option value={10}>10 menit sebelumnya</option>
+                    <option value={15}>15 menit sebelumnya (Rekomendasi)</option>
+                    <option value={30}>30 menit sebelumnya</option>
+                    <option value={60}>1 jam sebelumnya</option>
+                    <option value={120}>2 jam sebelumnya</option>
+                    <option value={1440}>1 hari sebelumnya</option>
+                  </select>
                 </div>
               )}
 
