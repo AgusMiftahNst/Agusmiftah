@@ -9,8 +9,11 @@ import {
   ChatMessage,
   UserSettings,
   AccessProfile,
-  AppFeatureTab
+  AppFeatureTab,
+  GoldAsset,
+  PrayerLocationSettings
 } from '../types';
+import { DEFAULT_PRAYER_LOCATION } from './prayerTimes';
 
 export const DEFAULT_ACCESS_PROFILES: AccessProfile[] = [
   {
@@ -169,16 +172,97 @@ export function getInitialDefaultState(): AppState {
 
   const defaultActivities: ActivityItem[] = [
     {
-      id: 'act-rutin-1',
-      title: 'Sholat Fardhu 5 Waktu Tepat Waktu & Dzikir',
+      id: 'act-sholat-subuh',
+      title: 'Sholat Subuh Berjamaah',
       category: 'ibadah',
       dueDate: today,
       completed: false,
       priority: 'tinggi',
-      notes: 'Subuh, Dzuhur, Ashar, Maghrib, Isya. Menjaga ketenangan batin dan kesehatan spiritual.',
+      notes: 'Subuh tepat waktu setelah adzan berkumandang.',
       createdAt: Date.now() - 300000000,
       activityType: 'rutin_harian',
+      prayerType: 'subuh',
       routineCompletions: { [today]: false }
+    },
+    {
+      id: 'act-sholat-dzuhur',
+      title: 'Sholat Dzuhur',
+      category: 'ibadah',
+      dueDate: today,
+      completed: false,
+      priority: 'tinggi',
+      notes: 'Dzuhur tepat waktu di sela aktivitas siang.',
+      createdAt: Date.now() - 300000000,
+      activityType: 'rutin_harian',
+      prayerType: 'dzuhur',
+      routineCompletions: { [today]: false }
+    },
+    {
+      id: 'act-sholat-ashar',
+      title: 'Sholat Ashar',
+      category: 'ibadah',
+      dueDate: today,
+      completed: false,
+      priority: 'tinggi',
+      notes: 'Ashar tepat waktu, istirahat sejenak untuk mengingat Allah.',
+      createdAt: Date.now() - 300000000,
+      activityType: 'rutin_harian',
+      prayerType: 'ashar',
+      routineCompletions: { [today]: false }
+    },
+    {
+      id: 'act-sholat-maghrib',
+      title: 'Sholat Maghrib',
+      category: 'ibadah',
+      dueDate: today,
+      completed: false,
+      priority: 'tinggi',
+      notes: 'Maghrib tepat waktu saat matahari terbenam.',
+      createdAt: Date.now() - 300000000,
+      activityType: 'rutin_harian',
+      prayerType: 'maghrib',
+      routineCompletions: { [today]: false }
+    },
+    {
+      id: 'act-sholat-isya',
+      title: 'Sholat Isya & Witir',
+      category: 'ibadah',
+      dueDate: today,
+      completed: false,
+      priority: 'tinggi',
+      notes: 'Isya tepat waktu dan sholat witir penutup hari.',
+      createdAt: Date.now() - 300000000,
+      activityType: 'rutin_harian',
+      prayerType: 'isya',
+      routineCompletions: { [today]: false }
+    },
+    {
+      id: 'act-rutin-minggu-1',
+      title: 'Sunnah Hari Jumat & Sedekah Subuh',
+      category: 'ibadah',
+      dueDate: today,
+      completed: false,
+      priority: 'tinggi',
+      notes: 'Mandi sunnah, potong kuku, baca surat Al-Kahfi, sholat Jumat tepat waktu.',
+      createdAt: Date.now() - 250000000,
+      activityType: 'rutin_mingguan',
+      weeklyInterval: 1,
+      weeklyDay: 5,
+      routineCompletions: {}
+    },
+    {
+      id: 'act-rutin-2minggu-1',
+      title: 'Bersih Rumah & Ganti Sprei Kamar',
+      category: 'pribadi',
+      dueDate: today,
+      completed: false,
+      priority: 'sedang',
+      notes: 'Rutin dua minggu sekali untuk menjaga kebersihan dan kenyamanan istirahat.',
+      createdAt: Date.now() - 250000000,
+      activityType: 'rutin_mingguan',
+      weeklyInterval: 2,
+      weeklyDay: 0,
+      routineCompletions: {}
     },
     {
       id: 'act-rutin-2',
@@ -411,6 +495,35 @@ export function getInitialDefaultState(): AppState {
       }
     ];
 
+    const defaultGoldAssets: GoldAsset[] = [
+      {
+        id: 'gold-1',
+        type: 'antam',
+        title: 'Emas Antam LM CertiCard',
+        weightGrams: 5,
+        purchaseDate: `${new Date().getFullYear() - 1}-04-12`,
+        purchasePricePerGram: 1080000,
+        totalPurchasePrice: 5400000,
+        currentEstPricePerGram: 1510000,
+        notes: 'Sertifikat CertiCard Reddot, simpan di brankas rumah.',
+        wallet: 'BCA',
+        createdAt: Date.now() - 300000000
+      },
+      {
+        id: 'gold-2',
+        type: 'galeri24',
+        title: 'Emas Galeri 24 (Pegadaian)',
+        weightGrams: 10,
+        purchaseDate: `${new Date().getFullYear()}-01-15`,
+        purchasePricePerGram: 1190000,
+        totalPurchasePrice: 11900000,
+        currentEstPricePerGram: 1495000,
+        notes: 'Logam mulia fisik Galeri 24 Pegadaian untuk proteksi nilai uang.',
+        wallet: 'BCA',
+        createdAt: Date.now() - 150000000
+      }
+    ];
+
     const defaultReminders: ReminderItem[] = [
       {
         id: 'rem-1',
@@ -454,7 +567,7 @@ export function getInitialDefaultState(): AppState {
       {
         id: 'msg-1',
         role: 'model',
-        text: 'JARVIS online. Halo Agus! Sistem siap membantu Anda memantau skrining kesehatan (tensi, asam urat, gula darah), target keuangan, serta melacak kegiatan rutin dan deadline pekerjaan. Ada yang perlu saya proses hari ini?',
+        text: 'JARVIS online. Halo Agus! Sistem siap membantu Anda memantau skrining kesehatan (tensi, asam urat, gula darah), target keuangan, portofolio aset emas (Antam, Galeri 24), serta melacak kegiatan rutin dan deadline pekerjaan. Ada yang perlu saya proses hari ini?',
         timestamp: Date.now() - 3600000
       }
     ];
@@ -477,6 +590,7 @@ export function getInitialDefaultState(): AppState {
       healthChecks: defaultHealthChecks,
       transactions: defaultTransactions,
       financialTargets: defaultFinancialTargets,
+      goldAssets: defaultGoldAssets,
       chatMessages: defaultChatMessages,
       settings: defaultSettings,
       serverUpdatedAt: 0
@@ -565,16 +679,36 @@ export function getInitialDefaultState(): AppState {
       ...a,
       category: a.category || 'kerjaan',
       activityType: a.activityType || 'deadline',
+      weeklyInterval: a.weeklyInterval === 2 ? 2 : (a.weeklyInterval === 1 ? 1 : undefined),
+      weeklyDay: typeof a.weeklyDay === 'number' ? a.weeklyDay : undefined,
+      prayerType: a.prayerType || undefined,
       routineCompletions: a.routineCompletions && typeof a.routineCompletions === 'object' ? a.routineCompletions : {}
     }));
 
+    // Ensure 5 daily prayers are available in activities list
+    const prayerTypes: Array<'subuh' | 'dzuhur' | 'ashar' | 'maghrib' | 'isya'> = ['subuh', 'dzuhur', 'ashar', 'maghrib', 'isya'];
+    prayerTypes.forEach((pt) => {
+      const exists = activities.some((a) => a.prayerType === pt);
+      if (!exists) {
+        const defaultPrayer = defaultState.activities.find((a) => a.prayerType === pt);
+        if (defaultPrayer) activities.push(defaultPrayer);
+      }
+    });
+
+    // Ensure weekly routines are present
+    const hasWeekly = activities.some((a) => a.activityType === 'rutin_mingguan');
+    if (!hasWeekly) {
+      const defaultWeeklies = defaultState.activities.filter((a) => a.activityType === 'rutin_mingguan');
+      activities.push(...defaultWeeklies);
+    }
+
     // Ensure default routine activities are present if user doesn't have any routine activities yet
     const hasAnyRoutine = activities.some(
-      (a) => a.activityType === 'rutin_harian' || a.activityType === 'rutin_bulanan'
+      (a) => a.activityType === 'rutin_harian' || a.activityType === 'rutin_mingguan' || a.activityType === 'rutin_bulanan'
     );
     if (!hasAnyRoutine) {
       const defaultRoutines = defaultState.activities.filter(
-        (a) => a.activityType === 'rutin_harian' || a.activityType === 'rutin_bulanan'
+        (a) => a.activityType === 'rutin_harian' || a.activityType === 'rutin_mingguan' || a.activityType === 'rutin_bulanan'
       );
       activities.unshift(...defaultRoutines);
     }
@@ -593,6 +727,7 @@ export function getInitialDefaultState(): AppState {
       healthChecks: Array.isArray(parsed.healthChecks) ? parsed.healthChecks : defaultState.healthChecks,
       transactions: Array.isArray(parsed.transactions) ? parsed.transactions : defaultState.transactions,
       financialTargets: Array.isArray(parsed.financialTargets) ? parsed.financialTargets : (defaultState.financialTargets || []),
+      goldAssets: Array.isArray(parsed.goldAssets) && parsed.goldAssets.length > 0 ? parsed.goldAssets : (defaultState.goldAssets || []),
       chatMessages: Array.isArray(parsed.chatMessages) ? parsed.chatMessages : defaultState.chatMessages,
       settings: {
         ...defaultState.settings,
@@ -601,7 +736,8 @@ export function getInitialDefaultState(): AppState {
         appPin: masterProfile.code || parsed.settings?.appPin || 'agus123',
         isPinRequired: typeof parsed.settings?.isPinRequired === 'boolean' ? parsed.settings.isPinRequired : false,
         notifyHoursBefore: typeof parsed.settings?.notifyHoursBefore === 'number' ? parsed.settings.notifyHoursBefore : 1,
-        accessProfiles
+        accessProfiles,
+        prayerLocation: parsed.settings?.prayerLocation || DEFAULT_PRAYER_LOCATION
       },
       serverUpdatedAt: typeof parsed.serverUpdatedAt === 'number' ? parsed.serverUpdatedAt : 0,
       syncRevision: typeof parsed.syncRevision === 'number' ? parsed.syncRevision : undefined
