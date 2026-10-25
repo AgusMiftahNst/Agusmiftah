@@ -31,6 +31,19 @@ export interface JarvisUserContext {
     description?: string;
     [key: string]: any;
   }>;
+  goldAssets?: Array<{
+    id?: string;
+    type?: string;
+    title?: string;
+    weightGrams?: number;
+    purchaseDate?: string;
+    purchasePricePerGram?: number;
+    totalPurchasePrice?: number;
+    currentEstPricePerGram?: number;
+    notes?: string;
+    wallet?: string;
+    [key: string]: any;
+  }>;
 }
 
 export function generateContextualJarvisReply(userText: string, context?: JarvisUserContext): string {
@@ -39,6 +52,71 @@ export function generateContextualJarvisReply(userText: string, context?: Jarvis
   const pending = context?.pendingActivities || [];
   const health = context?.latestHealthCheck;
   const habits = context?.todayHabits || [];
+  const gold = context?.goldAssets || [];
+
+  // 0. Aset Emas, Logam Mulia & Analisis Untung Rugi Jual
+  if (
+    q.includes('emas') ||
+    q.includes('antam') ||
+    q.includes('galeri 24') ||
+    q.includes('galeri24') ||
+    q.includes('ubs') ||
+    q.includes('pegadaian') ||
+    q.includes('logam mulia') ||
+    (q.includes('aset') && (q.includes('jual') || q.includes('untung') || q.includes('rugi') || q.includes('investasi') || q.includes('analisis'))) ||
+    (q.includes('untung') && q.includes('rugi'))
+  ) {
+    if (!gold || gold.length === 0) {
+      return `🏆 Halo Boss ${name}, belum ada portofolio aset emas yang tercatat di sistem. Kamu bisa menambahkan kepemilikan emasmu (Antam, Galeri 24 Pegadaian, UBS, dll) di tab **Keuangan > Aset & Emas** agar JARVIS bisa otomatis memantau estimasi nilai buyback dan menghitung potensi keuntungannya!`;
+    }
+
+    const totalWeight = gold.reduce((sum, g) => sum + (Number(g.weightGrams) || 0), 0);
+    const totalModal = gold.reduce((sum, g) => sum + (Number(g.totalPurchasePrice) || ((Number(g.weightGrams) || 0) * (Number(g.purchasePricePerGram) || 0))), 0);
+    const totalEstValue = gold.reduce((sum, g) => {
+      const weight = Number(g.weightGrams) || 0;
+      const estPrice = Number(g.currentEstPricePerGram) || (g.type === 'antam' ? 1510000 : g.type === 'galeri24' ? 1495000 : 1485000);
+      return sum + (weight * estPrice);
+    }, 0);
+
+    const totalProfit = totalEstValue - totalModal;
+    const profitPct = totalModal > 0 ? (totalProfit / totalModal) * 100 : 0;
+    const estTax = totalEstValue * 0.0045; // PPh 22 ~0.45% with NPWP
+    const netProceeds = totalEstValue - estTax;
+    const netProfit = netProceeds - totalModal;
+
+    const formatIdr = (num: number) => 'Rp ' + Math.round(num).toLocaleString('id-ID');
+
+    const itemDetails = gold.map((item, idx) => {
+      const w = Number(item.weightGrams) || 0;
+      const modal = Number(item.totalPurchasePrice) || (w * (Number(item.purchasePricePerGram) || 0));
+      const estP = Number(item.currentEstPricePerGram) || (item.type === 'antam' ? 1510000 : item.type === 'galeri24' ? 1495000 : 1485000);
+      const estVal = w * estP;
+      const pft = estVal - modal;
+      const pftPct = modal > 0 ? (pft / modal) * 100 : 0;
+      return `${idx + 1}. **${item.title || 'Emas'}** (${w}g) - Beli: ${item.purchaseDate || 'Tercatat'}\n   • Modal Beli: ${formatIdr(modal)} (${formatIdr(item.purchasePricePerGram || 0)}/g)\n   • Estimasi Jual Buyback: ${formatIdr(estVal)} (~${formatIdr(estP)}/g)\n   • ${pft >= 0 ? '🟢 Potensi Untung' : '🔴 Rugi'}: **${pft >= 0 ? '+' : ''}${formatIdr(pft)} (${pftPct >= 0 ? '+' : ''}${pftPct.toFixed(1)}%)**`;
+    }).join('\n\n');
+
+    let advice = '';
+    if (profitPct >= 20) {
+      advice = `🚀 **Analisis JARVIS: Sangat Menguntungkan!**\nPortofolio emasmu mencetak keuntungan kapital lebih dari **${profitPct.toFixed(1)}%**. Jika kamu membutuhkan dana tunai untuk keperluan penting atau alokasi properti/bisnis, mencairkan sebagian (misal 30-50%) sangat aman dan profit sudah nyata. Namun jika belum butuh uang tunai, tetap simpan (HOLD) sebagai proteksi aset terhadap inflasi jangka panjang!`;
+    } else if (profitPct >= 5) {
+      advice = `📈 **Analisis JARVIS: Positif & Bertumbuh!**\nKeuntungan bersihmu saat ini di kisaran **${profitPct.toFixed(1)}%**. Untuk investasi fisik logam mulia (Antam/Galeri 24), rentang waktu ideal adalah 2–5 tahun agar selisih harga jual-beli (spread) terlewati dengan maksimal. Saran JARVIS: Pertahankan (HOLD) dulu kecuali benar-benar butuh likuiditas darurat.`;
+    } else {
+      advice = `⏳ **Analisis JARVIS: Rekomendasi HOLD!**\nPerbedaan spread beli dan buyback saat ini belum memberikan keuntungan maksimal. Logam mulia adalah instrumen safe-haven jangka panjang. Disarankan simpan terus di tempat aman.`;
+    }
+
+    return `🏆 **Analisis Portofolio & Estimasi Untung Rugi Emas (${name}):**\n\n` +
+      `📊 **Ringkasan Total Aset:**\n` +
+      `• Total Berat Emas: **${totalWeight.toFixed(2)} Gram** (${gold.length} keping/posisi)\n` +
+      `• Total Modal Beli: **${formatIdr(totalModal)}**\n` +
+      `• Estimasi Nilai Buyback Sekarang: **${formatIdr(totalEstValue)}**\n` +
+      `• Potensi Keuntungan Kotor: **${totalProfit >= 0 ? '+' : ''}${formatIdr(totalProfit)} (${profitPct >= 0 ? '+' : ''}${profitPct.toFixed(1)}%)**\n` +
+      `• Estimasi PPh 22 (0.45%): ~${formatIdr(estTax)}\n` +
+      `• **Keuntungan Bersih (Setelah Pajak): ${netProfit >= 0 ? '+' : ''}${formatIdr(netProfit)}**\n\n` +
+      `📋 **Rincian Per Keping Aset:**\n${itemDetails}\n\n` +
+      `💡 ${advice}\n\n` +
+      `📍 *Tips Jual dari JARVIS*: Jika ingin jual, bawalah sertifikat ke Butik Emas Antam LM resmi atau Galeri 24 Pegadaian terdekat dengan menunjukkan NPWP agar potongan pajak buyback lebih rendah (hanya 0.45% dibanding 0.9%).`;
+  }
 
   // 1. Kegiatan & Deadline
   if (
