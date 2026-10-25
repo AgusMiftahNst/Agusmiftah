@@ -88,6 +88,7 @@ export default function App() {
   const [completeConfirmActivity, setCompleteConfirmActivity] = useState<ActivityItem | null>(null);
   const [revertConfirmActivity, setRevertConfirmActivity] = useState<ActivityItem | null>(null);
   const [syncToast, setSyncToast] = useState<string | null>(null);
+  const [isAdhanPlaying, setIsAdhanPlaying] = useState(false);
   const [lastNotifiedTime, setLastNotifiedTime] = useState<string>('');
   const notifiedDeadlinesRef = useRef<Set<string>>(new Set());
 
@@ -384,8 +385,8 @@ export default function App() {
         }
       }
 
-      // 2. Activity Deadlines Check (1 hour / 60 minutes prior to deadline on HP & Laptop)
-      const notifyWindowMinutes = (appState.settings.notifyHoursBefore || 1) * 60;
+      // 2. Activity Deadlines Check (Notifies before deadline based on user reminder preference)
+      const defaultNotifyWindowMinutes = (appState.settings.notifyHoursBefore || 1) * 60;
       (appState.activities || []).forEach((act) => {
         if (
           !act.completed &&
@@ -397,31 +398,78 @@ export default function App() {
           if (!isNaN(dh) && !isNaN(dm)) {
             const dueMins = dh * 60 + dm;
             const diffMins = dueMins - currentMinutes;
-            const notificationKey = `${act.id}-${todayDate}-${act.dueTime}`;
+            const reminderWindow = typeof act.reminderMinutesBefore === 'number'
+              ? act.reminderMinutesBefore
+              : defaultNotifyWindowMinutes;
+            const notificationKey = `${act.id}-${todayDate}-${act.dueTime}-${reminderWindow}`;
 
-            // Notify if within 60 minutes (e.g. 1 hour before) and not yet notified
-            if (diffMins >= 0 && diffMins <= notifyWindowMinutes && !notifiedDeadlinesRef.current.has(notificationKey)) {
+            // Notify if within the reminder window and not yet notified
+            if (diffMins >= 0 && diffMins <= reminderWindow && !notifiedDeadlinesRef.current.has(notificationKey)) {
               notifiedDeadlinesRef.current.add(notificationKey);
               if (appState.settings.soundEnabled) {
                 sound.playReminderAlert();
               }
               vibrateMobile([300, 150, 300]);
               const timeNotice = diffMins === 0 ? 'sekarang juga' : `${diffMins} menit lagi (pukul ${act.dueTime})`;
-              sendLocalNotification(`🔔 Deadline Kegiatan: ${act.title}`, {
+              sendLocalNotification(`🔔 Pengingat Kegiatan: ${act.title}`, {
                 body: `Tenggat waktu ${timeNotice}. Segera tuntaskan tugas ini!`,
                 vibrate: true
               });
-              setSyncToast(`🔔 Pengingat Deadline: ${act.title} (${timeNotice})`);
+              setSyncToast(`🔔 Pengingat: ${act.title} (${timeNotice})`);
               setTimeout(() => setSyncToast(null), 7000);
             }
           }
+        }
+      });
+
+      // 3. Sholat 5 Waktu & Suara Azan Otomatis Check
+      const prayerLoc = appState.settings.prayerLocation || DEFAULT_PRAYER_LOCATION;
+      const todayPrayers = calculatePrayerTimes(now, prayerLoc.latitude, prayerLoc.longitude, prayerLoc.timezone);
+      const prayerList: { name: string; time: string }[] = [
+        { name: 'Subuh', time: todayPrayers.subuh },
+        { name: 'Dzuhur', time: todayPrayers.dzuhur },
+        { name: 'Ashar', time: todayPrayers.ashar },
+        { name: 'Maghrib', time: todayPrayers.maghrib },
+        { name: 'Isya', time: todayPrayers.isya }
+      ];
+
+      prayerList.forEach((prayer) => {
+        const prayerKey = `prayer-${prayer.name.toLowerCase()}-${todayDate}`;
+        if (timeStr === prayer.time && !notifiedDeadlinesRef.current.has(prayerKey)) {
+          notifiedDeadlinesRef.current.add(prayerKey);
+
+          // Play adhan sound if enabled
+          const isAdhanSoundActive = appState.settings.adhanSoundEnabled !== false && appState.settings.soundEnabled;
+          if (isAdhanSoundActive) {
+            sound.playAdhan(() => setIsAdhanPlaying(false));
+            setIsAdhanPlaying(true);
+          } else if (appState.settings.soundEnabled) {
+            sound.playReminderAlert();
+          }
+
+          vibrateMobile([400, 200, 400, 200, 400]);
+          sendLocalNotification(`🕌 Waktunya Sholat ${prayer.name} (${prayerLoc.cityName})`, {
+            body: `Pukul ${prayer.time}. Waktu ${prayer.name} telah tiba untuk daerah ${prayerLoc.cityName}. Mari dirikan sholat.`,
+            vibrate: true
+          });
+          setSyncToast(`🕌 Waktunya Sholat ${prayer.name} (Pukul ${prayer.time} di ${prayerLoc.cityName})`);
+          setTimeout(() => setSyncToast(null), 10000);
         }
       });
     };
 
     const interval = window.setInterval(checkAlarmsAndDeadlines, 20000);
     return () => clearInterval(interval);
-  }, [appState.reminders, appState.activities, appState.settings.soundEnabled, appState.settings.notifyHoursBefore, lastNotifiedTime, todayDate]);
+  }, [
+    appState.reminders,
+    appState.activities,
+    appState.settings.soundEnabled,
+    appState.settings.notifyHoursBefore,
+    appState.settings.adhanSoundEnabled,
+    appState.settings.prayerLocation,
+    lastNotifiedTime,
+    todayDate
+  ]);
 
   // Activity mutations
   const handleToggleActivity = (id: string) => {
@@ -1013,17 +1061,49 @@ export default function App() {
     }));
   };
 
+  const handleToggleAdhanSound = () => {
+    updateAndSyncState((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        adhanSoundEnabled: prev.settings.adhanSoundEnabled === false ? true : false
+      }
+    }));
+  };
+
+  const handleTestAdhan = () => {
+    sound.playAdhan(() => setIsAdhanPlaying(false));
+    setIsAdhanPlaying(true);
+    setSyncToast('🕌 Memutar tes Suara Azan...');
+  };
+
+  const handleStopAdhan = () => {
+    sound.stopAdhan();
+    setIsAdhanPlaying(false);
+    setSyncToast(null);
+  };
+
   const pendingActivitiesCount = (appState.activities || []).filter((a) => !a.completed).length;
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col font-sans transition-colors relative">
-      {/* Toast Alert for Sync */}
-      {syncToast && (
+      {/* Toast Alert for Sync & Adhan Player */}
+      {(syncToast || isAdhanPlaying) && (
         <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 max-w-sm w-[92%] bg-emerald-600 dark:bg-emerald-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-xl flex items-center justify-between border border-emerald-400">
-          <span>{syncToast}</span>
-          <button onClick={() => setSyncToast(null)} className="ml-2 p-1 hover:bg-emerald-700 rounded-md">
-            ✕
-          </button>
+          <span>{isAdhanPlaying ? '🕌 Sedang mengumandangkan Azan...' : syncToast}</span>
+          <div className="flex items-center gap-2">
+            {isAdhanPlaying && (
+              <button
+                onClick={handleStopAdhan}
+                className="px-2 py-0.5 rounded-md bg-white text-emerald-800 text-[10px] font-bold hover:bg-emerald-100"
+              >
+                Hentikan
+              </button>
+            )}
+            <button onClick={() => setSyncToast(null)} className="ml-1 p-1 hover:bg-emerald-700 rounded-md">
+              ✕
+            </button>
+          </div>
         </div>
       )}
 
@@ -1064,6 +1144,11 @@ export default function App() {
             soundEnabled={appState.settings.soundEnabled}
             displayMode={appState.settings.displayMode || 'auto'}
             allowedTabs={activeProfile?.allowedTabs}
+            adhanSoundEnabled={appState.settings.adhanSoundEnabled !== false}
+            onToggleAdhanSound={handleToggleAdhanSound}
+            isAdhanPlaying={isAdhanPlaying}
+            onTestAdhan={handleTestAdhan}
+            onStopAdhan={handleStopAdhan}
           />
         )}
 
@@ -1221,6 +1306,8 @@ export default function App() {
         onRequestNotifications={handleRequestNotifications}
         pendingActivitiesCount={pendingActivitiesCount}
         remindersCount={(appState.reminders || []).filter((r) => r.enabled).length}
+        adhanSoundEnabled={appState.settings.adhanSoundEnabled !== false}
+        onToggleAdhanSound={handleToggleAdhanSound}
       />
 
       {/* Mobile-First Bottom Navigation with role-based tab filtering */}
