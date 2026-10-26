@@ -260,3 +260,25 @@ export function getWeeklyDayName(dayIndex?: number): string {
   }
   return 'Setiap Pekan';
 }
+
+/**
+ * Merges solar-calculated times with user-defined manual overrides if enabled
+ */
+export function resolvePrayerTimes(
+  calculated: PrayerTimes,
+  customOverrides?: Partial<PrayerTimes> | null,
+  useManual?: boolean
+): PrayerTimes {
+  if (useManual && customOverrides) {
+    return {
+      subuh: customOverrides.subuh || calculated.subuh,
+      terbit: customOverrides.terbit || calculated.terbit,
+      dzuhur: customOverrides.dzuhur || calculated.dzuhur,
+      ashar: customOverrides.ashar || calculated.ashar,
+      maghrib: customOverrides.maghrib || calculated.maghrib,
+      isya: customOverrides.isya || calculated.isya
+    };
+  }
+  return calculated;
+}
+
