@@ -86,14 +86,24 @@ export interface GoldAsset {
   purchasePricePerGram: number; // e.g. 1250000
   totalPurchasePrice: number; // total cost
   currentEstPricePerGram?: number; // estimated current market / buyback price
+  customBuybackPricePerGram?: number; // manual user override for buyback price per gram
   notes?: string;
   wallet?: string; // e.g. 'BCA', 'DANA', 'Tunai'
   createdAt: number;
 }
 
+export interface FinancialGoalItem {
+  id: string;
+  title: string; // e.g. 'Mahar', 'Sewa Gedung & Acara', 'Catering'
+  targetAmount: number;
+  currentAmount: number;
+  isCompleted?: boolean;
+  notes?: string;
+}
+
 export interface FinancialGoal {
   id: string;
-  title: string;
+  title: string; // e.g. 'Target Menikah' (Folder)
   targetAmount: number;
   currentAmount: number;
   targetDate?: string; // 'YYYY-MM-DD'
@@ -102,6 +112,7 @@ export interface FinancialGoal {
   wallet?: string;
   isCompleted?: boolean;
   createdAt: number;
+  items?: FinancialGoalItem[]; // Sub-items inside this goal folder
 }
 
 export interface ChatMessage {
@@ -147,6 +158,9 @@ export interface UserSettings {
   adhanSoundEnabled?: boolean; // Suara Azan otomatis saat waktu sholat tiba
   accessProfiles?: AccessProfile[];
   prayerLocation?: PrayerLocationSettings;
+  customPrayerTimes?: Partial<PrayerTimes>; // Manual prayer times override
+  useManualPrayerTimes?: boolean; // When true, uses user's manually entered prayer hours
+  globalGoldBuybackPrice?: number; // User-defined global benchmark buyback per gram
 }
 
 export interface AppState {
