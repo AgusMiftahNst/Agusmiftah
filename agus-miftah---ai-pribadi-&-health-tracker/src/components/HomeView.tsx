@@ -32,7 +32,8 @@ import {
   ActivityItem,
   FinancialGoal,
   AppFeatureTab,
-  PrayerLocationSettings
+  PrayerLocationSettings,
+  PrayerTimes
 } from '../types';
 import { formatRupiah, formatDateIndonesian, getActivityUrgency } from '../utils/storage';
 import { sound } from '../utils/audio';
@@ -41,6 +42,7 @@ import { AutoLinkText, QuickUrlButtons } from './AutoLinkText';
 import {
   calculatePrayerTimes,
   getNextPrayer,
+  resolvePrayerTimes,
   DEFAULT_PRAYER_LOCATION,
   INDONESIA_CITIES,
   getRoutineWeekKey,
@@ -67,11 +69,8 @@ interface HomeViewProps {
   soundEnabled: boolean;
   displayMode?: 'auto' | 'mobile' | 'laptop';
   allowedTabs?: AppFeatureTab[];
-  adhanSoundEnabled?: boolean;
-  onToggleAdhanSound?: () => void;
-  isAdhanPlaying?: boolean;
-  onTestAdhan?: () => void;
-  onStopAdhan?: () => void;
+  customPrayerTimes?: Partial<PrayerTimes>;
+  useManualPrayerTimes?: boolean;
 }
 
 export function HomeView({
@@ -94,11 +93,8 @@ export function HomeView({
   soundEnabled,
   displayMode = 'auto',
   allowedTabs,
-  adhanSoundEnabled = true,
-  onToggleAdhanSound,
-  isAdhanPlaying = false,
-  onTestAdhan,
-  onStopAdhan
+  customPrayerTimes,
+  useManualPrayerTimes
 }: HomeViewProps) {
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
   const [isGpsLoading, setIsGpsLoading] = useState(false);
@@ -113,13 +109,14 @@ export function HomeView({
   const latestCheck = healthChecks[0];
   const currentMonth = todayDate.slice(0, 7);
 
-  // Prayer Times calculation according to location
-  const prayerTimes = calculatePrayerTimes(
+  // Prayer Times calculation according to location + user manual overrides
+  const rawPrayerTimes = calculatePrayerTimes(
     new Date(),
     prayerLocation.latitude,
     prayerLocation.longitude,
     prayerLocation.timezone
   );
+  const prayerTimes = resolvePrayerTimes(rawPrayerTimes, customPrayerTimes, useManualPrayerTimes);
   const nextPrayer = getNextPrayer(prayerTimes, new Date());
 
   // Activities separation
@@ -361,44 +358,6 @@ export function HomeView({
                   })}
                 </div>
 
-                {/* Suara Adzan & Notifikasi Otomatis Control */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-emerald-200/60 dark:border-emerald-800/50 text-[11px]">
-                  <div className="flex items-center gap-2">
-                    <span className="text-emerald-800 dark:text-emerald-300 font-medium text-[10px]">
-                      Suara Azan Otomatis:
-                    </span>
-                    <button
-                      onClick={onToggleAdhanSound}
-                      className={`px-2 py-0.5 rounded-md font-bold text-[10px] transition-all ${
-                        adhanSoundEnabled
-                          ? 'bg-emerald-600 text-white shadow-2xs'
-                          : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                      }`}
-                      title={adhanSoundEnabled ? 'Suara azan berbunyi saat waktu sholat tiba' : 'Suara azan dibisukan'}
-                    >
-                      {adhanSoundEnabled ? 'Aktif 🔊' : 'Bisu 🔇'}
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    {isAdhanPlaying ? (
-                      <button
-                        onClick={onStopAdhan}
-                        className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] flex items-center gap-1 shadow-xs transition-colors"
-                      >
-                        <span>⏹️ Hentikan Azan</span>
-                      </button>
-                    ) : (
-                      <button
-                        onClick={onTestAdhan}
-                        className="px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 hover:bg-emerald-200 dark:hover:bg-emerald-900 text-emerald-800 dark:text-emerald-200 font-bold text-[10px] flex items-center gap-1 border border-emerald-300/80 dark:border-emerald-800 transition-colors"
-                        title="Tes dengarkan suara adzan sekarang"
-                      >
-                        <span>▶️ Tes Suara Azan</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
               </div>
 
               {/* General Routines List (Daily & Weekly & Monthly) */}
@@ -708,30 +667,42 @@ export function HomeView({
               </div>
 
               {/* Quick target progress preview */}
-              {financialTargets.length > 0 && (
-                <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <div className="flex items-center justify-between text-[11px] mb-1 font-semibold text-slate-700 dark:text-slate-300">
-                    <span className="flex items-center gap-1">
-                      <Target className="w-3.5 h-3.5 text-amber-500" />
-                      {financialTargets[0].title}
-                    </span>
-                    <span className="font-mono text-amber-600">
-                      {formatRupiah(financialTargets[0].currentAmount)}
-                    </span>
+              {financialTargets.length > 0 && (() => {
+                const topGoal = financialTargets[0];
+                const hasSub = Array.isArray(topGoal.items) && topGoal.items.length > 0;
+                const cAmt = hasSub
+                  ? topGoal.items!.reduce((s, it) => s + (Number(it.currentAmount) || 0), 0)
+                  : topGoal.currentAmount;
+                const tAmt = hasSub
+                  ? topGoal.items!.reduce((s, it) => s + (Number(it.targetAmount) || 0), 0)
+                  : topGoal.targetAmount;
+                const pct = tAmt > 0 ? Math.min(100, Math.round((cAmt / tAmt) * 100)) : 0;
+
+                return (
+                  <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center justify-between text-[11px] mb-1 font-semibold text-slate-700 dark:text-slate-300">
+                      <span className="flex items-center gap-1 truncate max-w-[170px]">
+                        <Target className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <span className="truncate">{topGoal.title}</span>
+                        {hasSub && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 font-bold shrink-0">
+                            Folder ({topGoal.items!.length})
+                          </span>
+                        )}
+                      </span>
+                      <span className="font-mono text-amber-600 font-bold shrink-0 text-[10px]">
+                        {formatRupiah(cAmt)} ({pct}%)
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-amber-500 rounded-full transition-all duration-500"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-amber-500 rounded-full"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          Math.round((financialTargets[0].currentAmount / financialTargets[0].targetAmount) * 100)
-                        )}%`
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
+                );
+              })()}
 
               <button
                 onClick={() => onNavigateTab('finance')}
@@ -918,6 +889,7 @@ export function HomeView({
           </div>
         </div>
       )}
+
     </div>
   );
 }
