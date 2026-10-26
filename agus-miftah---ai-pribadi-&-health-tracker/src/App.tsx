@@ -20,6 +20,7 @@ import { ConfirmCompleteModal } from './components/ConfirmCompleteModal';
 import { RevertActivityModal } from './components/RevertActivityModal';
 import { LockScreen } from './components/LockScreen';
 import { PasscodeManagerModal } from './components/PasscodeManagerModal';
+import { PrayerSettingsModal } from './components/PrayerSettingsModal';
 import {
   AppState,
   ActivityItem,
@@ -36,6 +37,7 @@ import {
 } from './types';
 import {
   calculatePrayerTimes,
+  resolvePrayerTimes,
   DEFAULT_PRAYER_LOCATION,
   getRoutineWeekKey,
   PrayerTimes
@@ -59,6 +61,7 @@ import {
 } from './utils/sync';
 import { generateContextualJarvisReply } from './utils/jarvisBrain';
 import { sound } from './utils/audio';
+import { getCustomAudio } from './utils/audioStorage';
 import { sendLocalNotification, requestNotificationPermission, vibrateMobile } from './utils/notifications';
 
 interface DeleteConfirmTarget {
@@ -78,6 +81,7 @@ export default function App() {
   const [isHealthCheckOpen, setIsHealthCheckOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isPasscodeManagerOpen, setIsPasscodeManagerOpen] = useState(false);
+  const [isPrayerSettingsOpen, setIsPrayerSettingsOpen] = useState(false);
   const [isLocked, setIsLocked] = useState<boolean>(() => Boolean(loadAppState()?.settings?.isPinRequired));
   const [activeProfile, setActiveProfile] = useState<AccessProfile | null>(() => {
     const initial = loadAppState();
@@ -424,7 +428,12 @@ export default function App() {
 
       // 3. Sholat 5 Waktu & Suara Azan Otomatis Check
       const prayerLoc = appState.settings.prayerLocation || DEFAULT_PRAYER_LOCATION;
-      const todayPrayers = calculatePrayerTimes(now, prayerLoc.latitude, prayerLoc.longitude, prayerLoc.timezone);
+      const calculatedPrayers = calculatePrayerTimes(now, prayerLoc.latitude, prayerLoc.longitude, prayerLoc.timezone);
+      const todayPrayers = resolvePrayerTimes(
+        calculatedPrayers,
+        appState.settings.customPrayerTimes,
+        appState.settings.useManualPrayerTimes
+      );
       const prayerList: { name: string; time: string }[] = [
         { name: 'Subuh', time: todayPrayers.subuh },
         { name: 'Dzuhur', time: todayPrayers.dzuhur },
@@ -438,11 +447,13 @@ export default function App() {
         if (timeStr === prayer.time && !notifiedDeadlinesRef.current.has(prayerKey)) {
           notifiedDeadlinesRef.current.add(prayerKey);
 
-          // Play adhan sound if enabled
+          // Play adhan sound if enabled (uses custom uploaded audio if available)
           const isAdhanSoundActive = appState.settings.adhanSoundEnabled !== false && appState.settings.soundEnabled;
           if (isAdhanSoundActive) {
-            sound.playAdhan(() => setIsAdhanPlaying(false));
-            setIsAdhanPlaying(true);
+            getCustomAudio('custom_adhan').then((custom) => {
+              sound.playAdhan(custom?.dataUrl || null, () => setIsAdhanPlaying(false));
+              setIsAdhanPlaying(true);
+            });
           } else if (appState.settings.soundEnabled) {
             sound.playReminderAlert();
           }
@@ -1071,16 +1082,38 @@ export default function App() {
     }));
   };
 
-  const handleTestAdhan = () => {
-    sound.playAdhan(() => setIsAdhanPlaying(false));
+  const handleTestAdhan = async () => {
+    const custom = await getCustomAudio('custom_adhan');
+    sound.playAdhan(custom?.dataUrl || null, () => setIsAdhanPlaying(false));
     setIsAdhanPlaying(true);
-    setSyncToast('🕌 Memutar tes Suara Azan...');
+    setSyncToast(
+      custom?.fileName
+        ? `🕌 Memutar audio kustom: ${custom.fileName}...`
+        : '🕌 Memutar Suara Azan...'
+    );
   };
 
   const handleStopAdhan = () => {
     sound.stopAdhan();
     setIsAdhanPlaying(false);
     setSyncToast(null);
+  };
+
+  const handleSavePrayerTimes = (customTimes: Partial<PrayerTimes>, useManual: boolean) => {
+    updateAndSyncState((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        customPrayerTimes: customTimes,
+        useManualPrayerTimes: useManual
+      }
+    }));
+    setSyncToast(
+      useManual
+        ? 'Jadwal sholat manual disimpan!'
+        : 'Jadwal sholat otomatis Nabire diaktifkan!'
+    );
+    setTimeout(() => setSyncToast(null), 4000);
   };
 
   const pendingActivitiesCount = (appState.activities || []).filter((a) => !a.completed).length;
@@ -1144,11 +1177,8 @@ export default function App() {
             soundEnabled={appState.settings.soundEnabled}
             displayMode={appState.settings.displayMode || 'auto'}
             allowedTabs={activeProfile?.allowedTabs}
-            adhanSoundEnabled={appState.settings.adhanSoundEnabled !== false}
-            onToggleAdhanSound={handleToggleAdhanSound}
-            isAdhanPlaying={isAdhanPlaying}
-            onTestAdhan={handleTestAdhan}
-            onStopAdhan={handleStopAdhan}
+            customPrayerTimes={appState.settings.customPrayerTimes}
+            useManualPrayerTimes={Boolean(appState.settings.useManualPrayerTimes)}
           />
         )}
 
@@ -1308,6 +1338,30 @@ export default function App() {
         remindersCount={(appState.reminders || []).filter((r) => r.enabled).length}
         adhanSoundEnabled={appState.settings.adhanSoundEnabled !== false}
         onToggleAdhanSound={handleToggleAdhanSound}
+        cityName={appState.settings.prayerLocation?.cityName || 'Nabire'}
+        useManualPrayerTimes={Boolean(appState.settings.useManualPrayerTimes)}
+        onOpenPrayerSettings={() => setIsPrayerSettingsOpen(true)}
+      />
+
+      {/* Prayer Times & Adhan Sound Settings Modal (From Sidebar) */}
+      <PrayerSettingsModal
+        isOpen={isPrayerSettingsOpen}
+        onClose={() => setIsPrayerSettingsOpen(false)}
+        prayerLocation={appState.settings.prayerLocation || DEFAULT_PRAYER_LOCATION}
+        defaultTimes={calculatePrayerTimes(
+          new Date(),
+          (appState.settings.prayerLocation || DEFAULT_PRAYER_LOCATION).latitude,
+          (appState.settings.prayerLocation || DEFAULT_PRAYER_LOCATION).longitude,
+          (appState.settings.prayerLocation || DEFAULT_PRAYER_LOCATION).timezone
+        )}
+        customTimes={appState.settings.customPrayerTimes}
+        useManual={Boolean(appState.settings.useManualPrayerTimes)}
+        onSavePrayerTimes={handleSavePrayerTimes}
+        adhanSoundEnabled={appState.settings.adhanSoundEnabled !== false}
+        onToggleAdhanSound={handleToggleAdhanSound}
+        isAdhanPlaying={isAdhanPlaying}
+        onTestAdhan={handleTestAdhan}
+        onStopAdhan={handleStopAdhan}
       />
 
       {/* Mobile-First Bottom Navigation with role-based tab filtering */}
