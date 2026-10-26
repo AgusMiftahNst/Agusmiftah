@@ -19,9 +19,16 @@ import {
   Sparkles,
   Info,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Folder,
+  FolderOpen,
+  ChevronDown,
+  ChevronUp,
+  CheckSquare,
+  Square,
+  ListPlus
 } from 'lucide-react';
-import { TransactionLog, FinancialGoal, GoldAsset } from '../types';
+import { TransactionLog, FinancialGoal, FinancialGoalItem, GoldAsset } from '../types';
 import { formatRupiah, formatDateIndonesian } from '../utils/storage';
 import { sound } from '../utils/audio';
 
@@ -39,12 +46,12 @@ export const WALLET_OPTIONS = [
 ];
 
 export const GOLD_TYPES = [
-  { id: 'antam', label: 'Emas Antam LM (CertiCard)', defaultBuyback: 1510000, tag: 'Antam Resmi' },
-  { id: 'galeri24', label: 'Emas Galeri 24 (Pegadaian)', defaultBuyback: 1495000, tag: 'Galeri 24' },
-  { id: 'ubs', label: 'Emas UBS Gold', defaultBuyback: 1485000, tag: 'UBS Gold' },
-  { id: 'pegadaian', label: 'Tabungan Emas Pegadaian', defaultBuyback: 1490000, tag: 'Tabungan Emas' },
-  { id: 'perhiasan', label: 'Emas Perhiasan', defaultBuyback: 1150000, tag: 'Perhiasan' },
-  { id: 'lainnya', label: 'Aset Mulia Lainnya', defaultBuyback: 1480000, tag: 'Logam Mulia' }
+  { id: 'antam', label: 'Emas Antam LM (CertiCard)', defaultBuyback: 1395000, tag: 'Antam Resmi' },
+  { id: 'galeri24', label: 'Emas Galeri 24 (Pegadaian)', defaultBuyback: 1385000, tag: 'Galeri 24' },
+  { id: 'ubs', label: 'Emas UBS Gold', defaultBuyback: 1380000, tag: 'UBS Gold' },
+  { id: 'pegadaian', label: 'Tabungan Emas Pegadaian', defaultBuyback: 1380000, tag: 'Tabungan Emas' },
+  { id: 'perhiasan', label: 'Emas Perhiasan', defaultBuyback: 1050000, tag: 'Perhiasan' },
+  { id: 'lainnya', label: 'Aset Mulia Lainnya', defaultBuyback: 1380000, tag: 'Logam Mulia' }
 ] as const;
 
 interface SimpleFinanceViewProps {
@@ -106,6 +113,22 @@ export function SimpleFinanceView({
   const [topUpTarget, setTopUpTarget] = useState<FinancialGoal | null>(null);
   const [topUpAmount, setTopUpAmount] = useState('');
 
+  // Folder & Sub-items state for Financial Goals
+  const [expandedGoalIds, setExpandedGoalIds] = useState<Set<string>>(() => {
+    const s = new Set<string>();
+    (financialTargets || []).forEach((g) => {
+      if (g.items && g.items.length > 0) s.add(g.id);
+    });
+    return s;
+  });
+  const [addingItemToGoal, setAddingItemToGoal] = useState<FinancialGoal | null>(null);
+  const [editingSubItem, setEditingSubItem] = useState<{ goal: FinancialGoal; item: FinancialGoalItem } | null>(null);
+  const [topUpSubItem, setTopUpSubItem] = useState<{ goal: FinancialGoal; item: FinancialGoalItem } | null>(null);
+  const [itemTitle, setItemTitle] = useState('');
+  const [itemTargetAmount, setItemTargetAmount] = useState('');
+  const [itemCurrentAmount, setItemCurrentAmount] = useState('');
+  const [itemNotes, setItemNotes] = useState('');
+
   // Gold Asset state
   const [isAddingGold, setIsAddingGold] = useState(false);
   const [editingGold, setEditingGold] = useState<GoldAsset | null>(null);
@@ -115,13 +138,53 @@ export function SimpleFinanceView({
   const [goldPurchaseDate, setGoldPurchaseDate] = useState(todayDate);
   const [goldPricePerGram, setGoldPricePerGram] = useState('');
   const [goldTotalPurchase, setGoldTotalPurchase] = useState('');
-  const [goldCurrentEstPrice, setGoldCurrentEstPrice] = useState('1495000');
+  const [goldCurrentEstPrice, setGoldCurrentEstPrice] = useState('1385000');
   const [goldNotes, setGoldNotes] = useState('');
   const [goldWallet, setGoldWallet] = useState('BCA');
+
+  // Custom Gold Buyback Benchmarks state (persisted in localStorage)
+  const [customBenchmarks, setCustomBenchmarks] = useState<Record<string, number>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('agus_miftah_gold_benchmarks');
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return {
+      antam: 1395000,
+      galeri24: 1385000,
+      ubs: 1380000,
+      pegadaian: 1380000,
+      perhiasan: 1050000,
+      lainnya: 1380000
+    };
+  });
+  const [isBenchmarkModalOpen, setIsBenchmarkModalOpen] = useState(false);
+  const [benchmarkForm, setBenchmarkForm] = useState({
+    antam: '1395000',
+    galeri24: '1385000',
+    ubs: '1380000',
+    pegadaian: '1380000'
+  });
+
+  // Individual Asset Quick Buyback Edit Modal
+  const [editingBuybackAsset, setEditingBuybackAsset] = useState<GoldAsset | null>(null);
+  const [quickBuybackPriceInput, setQuickBuybackPriceInput] = useState<string>('');
 
   // JARVIS AI Analysis Modal state
   const [isJarvisAnalysisOpen, setIsJarvisAnalysisOpen] = useState(false);
   const [selectedAssetForAnalysis, setSelectedAssetForAnalysis] = useState<GoldAsset | null>(null);
+
+  // Helper to determine accurate current buyback price per gram
+  const getAssetBuybackPrice = (asset: GoldAsset): number => {
+    if (asset.customBuybackPricePerGram && asset.customBuybackPricePerGram > 0) {
+      return asset.customBuybackPricePerGram;
+    }
+    if (asset.currentEstPricePerGram && asset.currentEstPricePerGram > 0) {
+      return asset.currentEstPricePerGram;
+    }
+    return customBenchmarks[asset.type] || (GOLD_TYPES.find((t) => t.id === asset.type)?.defaultBuyback) || 1385000;
+  };
 
   // General Finance Calculations
   const totalExpense = transactions
@@ -163,9 +226,7 @@ export function SimpleFinanceView({
 
   const totalGoldCurrentVal = goldAssets.reduce((sum, g) => {
     const w = Number(g.weightGrams) || 0;
-    const estP = Number(g.currentEstPricePerGram) || (
-      g.type === 'antam' ? 1510000 : g.type === 'galeri24' ? 1495000 : 1485000
-    );
+    const estP = getAssetBuybackPrice(g);
     return sum + (w * estP);
   }, 0);
 
@@ -206,15 +267,23 @@ export function SimpleFinanceView({
     if (isNaN(cleanTarget) || cleanTarget <= 0) return;
 
     if (editingTarget && onUpdateFinancialTarget) {
+      const existingItems = editingTarget.items || [];
+      const itemsTargetSum = existingItems.reduce((s, it) => s + it.targetAmount, 0);
+      const itemsCurrentSum = existingItems.reduce((s, it) => s + it.currentAmount, 0);
+      const finalTarget = existingItems.length > 0 ? itemsTargetSum : cleanTarget;
+      const finalCurrent = existingItems.length > 0 ? itemsCurrentSum : (isNaN(cleanCurrent) ? 0 : cleanCurrent);
+
       onUpdateFinancialTarget({
         ...editingTarget,
         title: targetTitle.trim(),
-        targetAmount: cleanTarget,
-        currentAmount: isNaN(cleanCurrent) ? 0 : cleanCurrent,
+        targetAmount: finalTarget,
+        currentAmount: finalCurrent,
         category: targetCategory,
         wallet: targetWallet,
         targetDate: targetDate || undefined,
-        notes: targetNotes.trim() || undefined
+        notes: targetNotes.trim() || undefined,
+        items: existingItems,
+        isCompleted: finalCurrent >= finalTarget
       });
     } else if (onAddFinancialTarget) {
       onAddFinancialTarget({
@@ -224,7 +293,8 @@ export function SimpleFinanceView({
         category: targetCategory,
         wallet: targetWallet,
         targetDate: targetDate || undefined,
-        notes: targetNotes.trim() || undefined
+        notes: targetNotes.trim() || undefined,
+        items: []
       });
     }
 
@@ -268,6 +338,183 @@ export function SimpleFinanceView({
     setIsAddingTarget(true);
   };
 
+  // Sub-items (Folder Items) Handlers
+  const toggleExpandGoal = (id: string) => {
+    setExpandedGoalIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const openAddSubItem = (goal: FinancialGoal) => {
+    setAddingItemToGoal(goal);
+    setEditingSubItem(null);
+    setItemTitle('');
+    setItemTargetAmount('');
+    setItemCurrentAmount('');
+    setItemNotes('');
+  };
+
+  const openEditSubItem = (goal: FinancialGoal, item: FinancialGoalItem) => {
+    setEditingSubItem({ goal, item });
+    setAddingItemToGoal(null);
+    setItemTitle(item.title);
+    setItemTargetAmount(item.targetAmount.toString());
+    setItemCurrentAmount(item.currentAmount.toString());
+    setItemNotes(item.notes || '');
+  };
+
+  const handleSubItemFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!itemTitle.trim() || !onUpdateFinancialTarget) return;
+
+    const tAmt = parseFloat(itemTargetAmount.toString().replace(/[^0-9.]/g, ''));
+    const cAmt = itemCurrentAmount ? parseFloat(itemCurrentAmount.toString().replace(/[^0-9.]/g, '')) : 0;
+    if (isNaN(tAmt) || tAmt <= 0) return;
+
+    if (editingSubItem) {
+      const { goal, item } = editingSubItem;
+      const updatedItems = (goal.items || []).map((it) => {
+        if (it.id !== item.id) return it;
+        const cur = isNaN(cAmt) ? 0 : cAmt;
+        return {
+          ...it,
+          title: itemTitle.trim(),
+          targetAmount: tAmt,
+          currentAmount: cur,
+          isCompleted: cur >= tAmt,
+          notes: itemNotes.trim() || undefined
+        };
+      });
+
+      const newTargetTotal = updatedItems.reduce((s, it) => s + it.targetAmount, 0);
+      const newCurrentTotal = updatedItems.reduce((s, it) => s + it.currentAmount, 0);
+
+      onUpdateFinancialTarget({
+        ...goal,
+        targetAmount: newTargetTotal,
+        currentAmount: newCurrentTotal,
+        items: updatedItems,
+        isCompleted: newCurrentTotal >= newTargetTotal
+      });
+      setEditingSubItem(null);
+    } else if (addingItemToGoal) {
+      const cur = isNaN(cAmt) ? 0 : cAmt;
+      const newItem: FinancialGoalItem = {
+        id: `item-${Date.now()}`,
+        title: itemTitle.trim(),
+        targetAmount: tAmt,
+        currentAmount: cur,
+        isCompleted: cur >= tAmt,
+        notes: itemNotes.trim() || undefined
+      };
+
+      const updatedItems = [...(addingItemToGoal.items || []), newItem];
+      const newTargetTotal = updatedItems.reduce((s, it) => s + it.targetAmount, 0);
+      const newCurrentTotal = updatedItems.reduce((s, it) => s + it.currentAmount, 0);
+
+      onUpdateFinancialTarget({
+        ...addingItemToGoal,
+        targetAmount: newTargetTotal,
+        currentAmount: newCurrentTotal,
+        items: updatedItems,
+        isCompleted: newCurrentTotal >= newTargetTotal
+      });
+
+      setExpandedGoalIds((prev) => new Set(prev).add(addingItemToGoal.id));
+      setAddingItemToGoal(null);
+    }
+
+    if (soundEnabled) sound.playSuccess();
+    setItemTitle('');
+    setItemTargetAmount('');
+    setItemCurrentAmount('');
+    setItemNotes('');
+  };
+
+  const handleToggleSubItemComplete = (goal: FinancialGoal, itemId: string) => {
+    if (!onUpdateFinancialTarget) return;
+    const updatedItems = (goal.items || []).map((it) => {
+      if (it.id !== itemId) return it;
+      const nextCompleted = !it.isCompleted;
+      return {
+        ...it,
+        isCompleted: nextCompleted,
+        currentAmount: nextCompleted ? Math.max(it.currentAmount, it.targetAmount) : it.currentAmount
+      };
+    });
+
+    const newTargetTotal = updatedItems.reduce((s, it) => s + it.targetAmount, 0);
+    const newCurrentTotal = updatedItems.reduce((s, it) => s + it.currentAmount, 0);
+
+    onUpdateFinancialTarget({
+      ...goal,
+      targetAmount: newTargetTotal,
+      currentAmount: newCurrentTotal,
+      items: updatedItems,
+      isCompleted: newCurrentTotal >= newTargetTotal
+    });
+
+    if (soundEnabled) sound.playSuccess();
+  };
+
+  const handleDeleteSubItem = (goal: FinancialGoal, itemId: string) => {
+    if (!onUpdateFinancialTarget) return;
+    const updatedItems = (goal.items || []).filter((it) => it.id !== itemId);
+    const newTargetTotal = updatedItems.length > 0
+      ? updatedItems.reduce((s, it) => s + it.targetAmount, 0)
+      : goal.targetAmount;
+    const newCurrentTotal = updatedItems.length > 0
+      ? updatedItems.reduce((s, it) => s + it.currentAmount, 0)
+      : goal.currentAmount;
+
+    onUpdateFinancialTarget({
+      ...goal,
+      targetAmount: newTargetTotal,
+      currentAmount: newCurrentTotal,
+      items: updatedItems,
+      isCompleted: newCurrentTotal >= newTargetTotal
+    });
+
+    if (soundEnabled) sound.playBreathCue(true);
+  };
+
+  const handleQuickTopUpSubItem = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!topUpSubItem || !topUpAmount || !onUpdateFinancialTarget) return;
+
+    const delta = parseFloat(topUpAmount.toString().replace(/[^0-9.]/g, ''));
+    if (isNaN(delta) || delta <= 0) return;
+
+    const { goal, item } = topUpSubItem;
+    const updatedItems = (goal.items || []).map((it) => {
+      if (it.id !== item.id) return it;
+      const newCurrent = it.currentAmount + delta;
+      return {
+        ...it,
+        currentAmount: newCurrent,
+        isCompleted: newCurrent >= it.targetAmount
+      };
+    });
+
+    const newTargetTotal = updatedItems.reduce((s, it) => s + it.targetAmount, 0);
+    const newCurrentTotal = updatedItems.reduce((s, it) => s + it.currentAmount, 0);
+
+    onUpdateFinancialTarget({
+      ...goal,
+      targetAmount: newTargetTotal,
+      currentAmount: newCurrentTotal,
+      items: updatedItems,
+      isCompleted: newCurrentTotal >= newTargetTotal
+    });
+
+    if (soundEnabled) sound.playSuccess();
+    setTopUpSubItem(null);
+    setTopUpAmount('');
+  };
+
   // Gold Asset Handlers
   const openAddGold = () => {
     setEditingGold(null);
@@ -277,7 +524,7 @@ export function SimpleFinanceView({
     setGoldPurchaseDate(todayDate);
     setGoldPricePerGram('');
     setGoldTotalPurchase('');
-    setGoldCurrentEstPrice('1495000');
+    setGoldCurrentEstPrice(String(customBenchmarks.galeri24 || 1385000));
     setGoldNotes('');
     setGoldWallet('BCA');
     setIsAddingGold(true);
@@ -291,7 +538,8 @@ export function SimpleFinanceView({
     setGoldPurchaseDate(asset.purchaseDate);
     setGoldPricePerGram(asset.purchasePricePerGram.toString());
     setGoldTotalPurchase(asset.totalPurchasePrice.toString());
-    setGoldCurrentEstPrice((asset.currentEstPricePerGram || 1500000).toString());
+    const estP = asset.customBuybackPricePerGram || asset.currentEstPricePerGram || customBenchmarks[asset.type] || 1385000;
+    setGoldCurrentEstPrice(estP.toString());
     setGoldNotes(asset.notes || '');
     setGoldWallet(asset.wallet || 'BCA');
     setIsAddingGold(true);
@@ -299,10 +547,10 @@ export function SimpleFinanceView({
 
   const handleGoldTypeSelect = (selectedType: GoldAsset['type']) => {
     setGoldType(selectedType);
-    const found = GOLD_TYPES.find((t) => t.id === selectedType);
-    const est = found ? found.defaultBuyback : 1500000;
+    const est = customBenchmarks[selectedType] || (GOLD_TYPES.find((t) => t.id === selectedType)?.defaultBuyback) || 1385000;
     setGoldCurrentEstPrice(est.toString());
     if (!editingGold) {
+      const found = GOLD_TYPES.find((t) => t.id === selectedType);
       const typeLabel = found ? (found.id === 'antam' ? 'Emas Antam LM' : found.id === 'galeri24' ? 'Emas Galeri 24' : found.id === 'ubs' ? 'Emas UBS' : found.label) : 'Emas';
       const weightSuffix = goldWeight ? ` ${goldWeight}g` : '';
       setGoldTitle(`${typeLabel}${weightSuffix}`);
@@ -359,7 +607,7 @@ export function SimpleFinanceView({
 
     if (isNaN(pGram) || isNaN(totCost) || totCost <= 0) return;
 
-    const estCurrentP = parseFloat(goldCurrentEstPrice) || (goldType === 'antam' ? 1510000 : 1495000);
+    const estCurrentP = parseFloat(goldCurrentEstPrice) || customBenchmarks[goldType] || 1385000;
 
     const assetData = {
       type: goldType,
@@ -369,6 +617,7 @@ export function SimpleFinanceView({
       purchasePricePerGram: pGram,
       totalPurchasePrice: totCost,
       currentEstPricePerGram: estCurrentP,
+      customBuybackPricePerGram: estCurrentP,
       notes: goldNotes.trim() || undefined,
       wallet: goldWallet
     };
@@ -385,6 +634,61 @@ export function SimpleFinanceView({
     if (soundEnabled) sound.playSuccess();
     setIsAddingGold(false);
     setEditingGold(null);
+  };
+
+  const handleQuickSaveBuybackPrice = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBuybackAsset || !onUpdateGoldAsset) return;
+    const cleanPrice = parseFloat(quickBuybackPriceInput.toString().replace(/[^0-9.]/g, ''));
+    if (isNaN(cleanPrice) || cleanPrice <= 0) return;
+
+    onUpdateGoldAsset({
+      ...editingBuybackAsset,
+      customBuybackPricePerGram: cleanPrice,
+      currentEstPricePerGram: cleanPrice
+    });
+
+    if (soundEnabled) sound.playSuccess();
+    setEditingBuybackAsset(null);
+    setQuickBuybackPriceInput('');
+  };
+
+  const handleOpenBenchmarkModal = () => {
+    setBenchmarkForm({
+      antam: String(customBenchmarks.antam || 1395000),
+      galeri24: String(customBenchmarks.galeri24 || 1385000),
+      ubs: String(customBenchmarks.ubs || 1380000),
+      pegadaian: String(customBenchmarks.pegadaian || 1380000)
+    });
+    setIsBenchmarkModalOpen(true);
+  };
+
+  const handleSaveBenchmarks = (applyToAllAssets: boolean) => {
+    const nextBenchmarks: Record<string, number> = {
+      ...customBenchmarks,
+      antam: parseFloat(benchmarkForm.antam) || 1395000,
+      galeri24: parseFloat(benchmarkForm.galeri24) || 1385000,
+      ubs: parseFloat(benchmarkForm.ubs) || 1380000,
+      pegadaian: parseFloat(benchmarkForm.pegadaian) || 1380000
+    };
+    setCustomBenchmarks(nextBenchmarks);
+    try {
+      localStorage.setItem('agus_miftah_gold_benchmarks', JSON.stringify(nextBenchmarks));
+    } catch {}
+
+    if (applyToAllAssets && onUpdateGoldAsset) {
+      goldAssets.forEach((asset) => {
+        const newRate = nextBenchmarks[asset.type] || nextBenchmarks.galeri24;
+        onUpdateGoldAsset({
+          ...asset,
+          customBuybackPricePerGram: newRate,
+          currentEstPricePerGram: newRate
+        });
+      });
+    }
+
+    if (soundEnabled) sound.playSuccess();
+    setIsBenchmarkModalOpen(false);
   };
 
   const triggerJarvisAnalysis = (asset?: GoldAsset) => {
@@ -894,31 +1198,46 @@ export function SimpleFinanceView({
             </div>
           </div>
 
-          {/* Market Buyback Benchmark Reference */}
+          {/* Market Buyback Benchmark Reference with manual edit button */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-3 shadow-xs">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-2 flex-wrap gap-1.5">
               <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
                 <TrendingUp className="w-3.5 h-3.5 text-amber-500" />
                 Acuan Estimasi Buyback Hari Ini (Per Gram)
               </span>
-              <span className="text-[10px] text-slate-400">Update berkala</span>
+              <button
+                type="button"
+                onClick={handleOpenBenchmarkModal}
+                className="px-2.5 py-1 text-[10px] font-bold text-amber-800 dark:text-amber-300 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 rounded-lg border border-amber-200/80 dark:border-amber-800 flex items-center gap-1 transition-all"
+              >
+                <Edit2 className="w-3 h-3" />
+                Edit Acuan Pasar
+              </button>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
               <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
                 <span className="text-[10px] text-slate-400 block">Antam LM CertiCard</span>
-                <span className="font-mono font-bold text-slate-800 dark:text-slate-200">~Rp 1.510.000</span>
+                <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                  {formatRupiah(customBenchmarks.antam || 1395000)}
+                </span>
               </div>
               <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
                 <span className="text-[10px] text-slate-400 block">Galeri 24 Pegadaian</span>
-                <span className="font-mono font-bold text-slate-800 dark:text-slate-200">~Rp 1.495.000</span>
+                <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                  {formatRupiah(customBenchmarks.galeri24 || 1385000)}
+                </span>
               </div>
               <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
                 <span className="text-[10px] text-slate-400 block">Emas UBS Gold</span>
-                <span className="font-mono font-bold text-slate-800 dark:text-slate-200">~Rp 1.485.000</span>
+                <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                  {formatRupiah(customBenchmarks.ubs || 1380000)}
+                </span>
               </div>
               <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
                 <span className="text-[10px] text-slate-400 block">Tabungan Pegadaian</span>
-                <span className="font-mono font-bold text-slate-800 dark:text-slate-200">~Rp 1.490.000</span>
+                <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                  {formatRupiah(customBenchmarks.pegadaian || 1380000)}
+                </span>
               </div>
             </div>
           </div>
@@ -1167,9 +1486,7 @@ export function SimpleFinanceView({
               {goldAssets.map((asset) => {
                 const w = Number(asset.weightGrams) || 0;
                 const modal = Number(asset.totalPurchasePrice) || (w * (Number(asset.purchasePricePerGram) || 0));
-                const estPrice = Number(asset.currentEstPricePerGram) || (
-                  asset.type === 'antam' ? 1510000 : asset.type === 'galeri24' ? 1495000 : 1485000
-                );
+                const estPrice = getAssetBuybackPrice(asset);
                 const estVal = w * estPrice;
                 const profit = estVal - modal;
                 const profitPct = modal > 0 ? (profit / modal) * 100 : 0;
@@ -1245,13 +1562,34 @@ export function SimpleFinanceView({
                       </div>
 
                       <div>
-                        <span className="text-[10px] text-slate-400 block">Estimasi Jual Buyback</span>
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="text-[10px] text-slate-400 block">Estimasi Jual Buyback</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingBuybackAsset(asset);
+                              setQuickBuybackPriceInput(String(estPrice));
+                            }}
+                            className="text-[10px] font-bold text-amber-700 dark:text-amber-300 hover:text-amber-800 bg-amber-100/80 hover:bg-amber-200/80 dark:bg-amber-950/80 px-1.5 py-0.5 rounded flex items-center gap-0.5 transition-colors"
+                            title="Edit harga buyback keping ini"
+                          >
+                            <Edit2 className="w-2.5 h-2.5" />
+                            Ubah
+                          </button>
+                        </div>
                         <span className="font-mono font-bold text-slate-900 dark:text-white block truncate">
                           {formatRupiah(estVal)}
                         </span>
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          @{formatRupiah(estPrice)}/g
-                        </span>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            @{formatRupiah(estPrice)}/g
+                          </span>
+                          {asset.customBuybackPricePerGram && (
+                            <span className="text-[9px] px-1 py-0.2 rounded bg-amber-200/80 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200 font-bold">
+                              Kustom
+                            </span>
+                          )}
+                        </div>
                         <div className="mt-0.5 flex items-center gap-1 font-mono font-bold text-[10px]">
                           <span className={profit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600'}>
                             {profit >= 0 ? '+' : ''}{formatRupiah(profit)} ({profitPct >= 0 ? '+' : ''}{profitPct.toFixed(1)}%)
@@ -1458,36 +1796,83 @@ export function SimpleFinanceView({
           ) : (
             <div className="space-y-3">
               {financialTargets.map((goal) => {
-                const percent = Math.min(100, Math.round((goal.currentAmount / goal.targetAmount) * 100));
-                const remaining = Math.max(0, goal.targetAmount - goal.currentAmount);
+                const hasItems = Array.isArray(goal.items) && goal.items.length > 0;
+                const itemsTargetTotal = hasItems
+                  ? goal.items!.reduce((sum, it) => sum + (Number(it.targetAmount) || 0), 0)
+                  : goal.targetAmount;
+                const itemsCurrentTotal = hasItems
+                  ? goal.items!.reduce((sum, it) => sum + (Number(it.currentAmount) || 0), 0)
+                  : goal.currentAmount;
+
+                const displayTargetAmount = hasItems ? itemsTargetTotal : goal.targetAmount;
+                const displayCurrentAmount = hasItems ? itemsCurrentTotal : goal.currentAmount;
+                const percent = displayTargetAmount > 0
+                  ? Math.min(100, Math.round((displayCurrentAmount / displayTargetAmount) * 100))
+                  : 0;
+                const remaining = Math.max(0, displayTargetAmount - displayCurrentAmount);
+                const isExpanded = expandedGoalIds.has(goal.id);
+                const completedCount = hasItems
+                  ? goal.items!.filter((it) => it.isCompleted || it.currentAmount >= it.targetAmount).length
+                  : 0;
 
                 return (
                   <div
                     key={goal.id}
-                    className="p-4 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-xs space-y-3"
+                    className="p-4 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-xs space-y-3 transition-all"
                   >
+                    {/* Goal Card Header */}
                     <div className="flex items-start justify-between gap-2">
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/60">
-                            {goal.category || 'Tabungan'}
-                          </span>
+                          {hasItems ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300/80 flex items-center gap-1">
+                              <Folder className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                              Folder Target ({goal.items!.length} item)
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/60 flex items-center gap-1">
+                              <Target className="w-3 h-3 text-amber-500" />
+                              {goal.category || 'Tabungan'}
+                            </span>
+                          )}
+
                           {goal.wallet && (
                             <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/50">
                               {goal.wallet}
                             </span>
                           )}
+
+                          {hasItems && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                              {completedCount}/{goal.items!.length} item lunas
+                            </span>
+                          )}
+
                           {percent >= 100 && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex items-center gap-1">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300 flex items-center gap-1">
                               <CheckCircle2 className="w-3 h-3" />
                               Tercapai! 🎉
                             </span>
                           )}
                         </div>
 
-                        <h4 className="text-sm font-bold text-slate-900 dark:text-white mt-1">
-                          {goal.title}
-                        </h4>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                            {goal.title}
+                          </h4>
+                          <button
+                            type="button"
+                            onClick={() => toggleExpandGoal(goal.id)}
+                            className="p-1 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 rounded-lg transition-colors flex items-center gap-0.5 text-[10px] font-semibold"
+                            title={isExpanded ? 'Sembunyikan rincian' : 'Buka rincian item'}
+                          >
+                            {isExpanded ? (
+                              <ChevronUp className="w-3.5 h-3.5 text-amber-500" />
+                            ) : (
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
 
                         {goal.notes && (
                           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
@@ -1516,19 +1901,25 @@ export function SimpleFinanceView({
                       </div>
                     </div>
 
-                    {/* Progress Bar & Amounts */}
-                    <div className="space-y-1.5">
+                    {/* Progress Bar & Amounts (Reflects total folder calculation) */}
+                    <div className="space-y-1.5 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-850/60 border border-slate-100 dark:border-slate-800">
                       <div className="flex justify-between items-baseline text-xs">
-                        <span className="font-mono font-bold text-slate-900 dark:text-white">
-                          {formatRupiah(goal.currentAmount)}
-                        </span>
-                        <span className="text-slate-400 font-mono text-[11px]">
-                          Target: {formatRupiah(goal.targetAmount)} ({percent}%)
-                        </span>
+                        <div>
+                          <span className="text-[10px] text-slate-400 block font-medium">Terkumpul Total</span>
+                          <span className="font-mono font-bold text-slate-900 dark:text-white text-sm">
+                            {formatRupiah(displayCurrentAmount)}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] text-slate-400 block font-medium">Target Total</span>
+                          <span className="text-slate-600 dark:text-slate-300 font-mono font-bold text-xs">
+                            {formatRupiah(displayTargetAmount)} ({percent}%)
+                          </span>
+                        </div>
                       </div>
 
                       {/* Progress Track */}
-                      <div className="w-full h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                      <div className="w-full h-2.5 bg-slate-200/70 dark:bg-slate-800 rounded-full overflow-hidden">
                         <div
                           className={`h-full rounded-full transition-all duration-500 ${
                             percent >= 100
@@ -1543,7 +1934,7 @@ export function SimpleFinanceView({
 
                       <div className="flex items-center justify-between text-[10px] text-slate-400 pt-0.5">
                         <span>
-                          {remaining > 0 ? `Kurang ${formatRupiah(remaining)} lagi` : 'Target sudah lunas'}
+                          {remaining > 0 ? `Sisa kurang ${formatRupiah(remaining)}` : 'Semua target telah lunas 🎉'}
                         </span>
                         {goal.targetDate && (
                           <span className="flex items-center gap-1 font-mono">
@@ -1554,17 +1945,177 @@ export function SimpleFinanceView({
                       </div>
                     </div>
 
-                    {/* Quick Add Funds button */}
-                    <div className="pt-1">
+                    {/* Sub-items (Folder Content) */}
+                    {isExpanded && (
+                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2.5 animate-fade-in">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                            <ListPlus className="w-3.5 h-3.5 text-amber-500" />
+                            Rincian Item Kebutuhan {hasItems ? `(${goal.items!.length})` : ''}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => openAddSubItem(goal)}
+                            className="px-2.5 py-1 text-[10px] font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs flex items-center gap-1 transition-all"
+                          >
+                            <Plus className="w-3 h-3" />
+                            Tambah Item
+                          </button>
+                        </div>
+
+                        {/* List of sub-items */}
+                        {hasItems ? (
+                          <div className="space-y-2">
+                            {goal.items!.map((it) => {
+                              const itTarget = Number(it.targetAmount) || 0;
+                              const itCurrent = Number(it.currentAmount) || 0;
+                              const itPct = itTarget > 0 ? Math.min(100, Math.round((itCurrent / itTarget) * 100)) : 0;
+                              const itDone = it.isCompleted || itCurrent >= itTarget;
+
+                              return (
+                                <div
+                                  key={it.id}
+                                  className={`p-2.5 rounded-xl border text-xs transition-all ${
+                                    itDone
+                                      ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200/70 dark:border-emerald-900/40'
+                                      : 'bg-white dark:bg-slate-850 border-slate-200/80 dark:border-slate-800'
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="flex items-start gap-2 flex-1 min-w-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleSubItemComplete(goal, it.id)}
+                                        className="mt-0.5 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 shrink-0"
+                                      >
+                                        {itDone ? (
+                                          <CheckSquare className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                        ) : (
+                                          <Square className="w-4 h-4" />
+                                        )}
+                                      </button>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-baseline justify-between gap-2">
+                                          <span
+                                            className={`font-semibold text-slate-900 dark:text-white truncate ${
+                                              itDone ? 'line-through text-slate-400 dark:text-slate-500' : ''
+                                            }`}
+                                          >
+                                            {it.title}
+                                          </span>
+                                          <span className="font-mono text-[11px] font-bold text-amber-700 dark:text-amber-300 shrink-0">
+                                            {formatRupiah(itCurrent)}
+                                          </span>
+                                        </div>
+
+                                        <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono mt-0.5">
+                                          <span>Target: {formatRupiah(itTarget)}</span>
+                                          <span className={itDone ? 'text-emerald-600 font-bold' : ''}>
+                                            {itPct}%
+                                          </span>
+                                        </div>
+
+                                        {/* Mini progress bar */}
+                                        <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mt-1">
+                                          <div
+                                            className={`h-full rounded-full transition-all duration-300 ${
+                                              itDone ? 'bg-emerald-500' : 'bg-amber-500'
+                                            }`}
+                                            style={{ width: `${itPct}%` }}
+                                          />
+                                        </div>
+
+                                        {it.notes && (
+                                          <p className="text-[10px] text-slate-400 mt-1 italic truncate">
+                                            {it.notes}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Sub-item Actions */}
+                                    <div className="flex items-center gap-1 shrink-0 pt-0.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setTopUpSubItem({ goal, item: it });
+                                          setTopUpAmount('');
+                                        }}
+                                        className="px-2 py-1 text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 rounded-md border border-amber-200/80 dark:border-amber-900/60"
+                                        title="Tambah setoran khusus item ini"
+                                      >
+                                        + Setor
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => openEditSubItem(goal, it)}
+                                        className="p-1 text-slate-400 hover:text-amber-600 rounded-md"
+                                        title="Edit rincian item"
+                                      >
+                                        <Edit2 className="w-3 h-3" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteSubItem(goal, it.id)}
+                                        className="p-1 text-slate-400 hover:text-rose-600 rounded-md"
+                                        title="Hapus rincian item"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="p-3 text-center bg-slate-50 dark:bg-slate-850 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
+                              Belum ada rincian item di folder ini. Tambahkan item seperti Mahar, Acara, Catering, dll.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => openAddSubItem(goal)}
+                              className="px-3 py-1.5 text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-100/70 hover:bg-amber-100 rounded-xl inline-flex items-center gap-1"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              Tambah Rincian Item Pertama
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Bottom Action Bar */}
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        onClick={() => toggleExpandGoal(goal.id)}
+                        className="flex-1 py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        {isExpanded ? (
+                          <>
+                            <FolderOpen className="w-3.5 h-3.5 text-amber-500" />
+                            Tutup Rincian ({hasItems ? goal.items!.length : 0})
+                          </>
+                        ) : (
+                          <>
+                            <Folder className="w-3.5 h-3.5 text-amber-500" />
+                            {hasItems
+                              ? `Buka Rincian Folder (${goal.items!.length} item)`
+                              : 'Buka / Bikin Rincian Item'}
+                          </>
+                        )}
+                      </button>
+
                       <button
                         onClick={() => {
                           setTopUpTarget(goal);
                           setTopUpAmount('');
                         }}
-                        className="w-full py-1.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-xs font-bold border border-amber-200/80 dark:border-amber-800 flex items-center justify-center gap-1.5 transition-colors"
+                        className="py-1.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-xs font-bold border border-amber-200/80 dark:border-amber-800 flex items-center justify-center gap-1 transition-colors"
                       >
                         <Plus className="w-3.5 h-3.5" />
-                        Tambah Setoran Tabungan
+                        Setor Tabungan
                       </button>
                     </div>
                   </div>
@@ -1631,6 +2182,204 @@ export function SimpleFinanceView({
               </div>
             </div>
           )}
+
+          {/* Modal Tambah / Edit Rincian Item (Folder Sub-Item) */}
+          {(addingItemToGoal || editingSubItem) && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+              <div className="bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded-3xl w-full max-w-sm p-5 space-y-3.5 shadow-2xl animate-fade-in">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
+                      <ListPlus className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                        {editingSubItem ? 'Edit Rincian Item' : 'Tambah Rincian Item'}
+                      </h4>
+                      <p className="text-[10px] text-slate-400 truncate">
+                        Target: {editingSubItem ? editingSubItem.goal.title : addingItemToGoal?.title}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddingItemToGoal(null);
+                      setEditingSubItem(null);
+                    }}
+                    className="p-1 text-slate-400 hover:text-slate-600 rounded-lg shrink-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSubItemFormSubmit} className="space-y-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Nama Item / Kebutuhan
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Contoh: Mahar, Acara Resepsi, Catering, Baju & Rias..."
+                      value={itemTitle}
+                      onChange={(e) => setItemTitle(e.target.value)}
+                      className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Target Nominal (Rp)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        required
+                        placeholder="Contoh: 10000000"
+                        value={itemTargetAmount}
+                        onChange={(e) => setItemTargetAmount(e.target.value)}
+                        className="w-full px-3 py-2 text-xs font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
+                      />
+                      {itemTargetAmount && !isNaN(parseFloat(itemTargetAmount)) && (
+                        <span className="text-[10px] text-amber-600 font-mono font-bold mt-0.5 block truncate">
+                          {formatRupiah(parseFloat(itemTargetAmount))}
+                        </span>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Saldo Terkumpul Awal
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        placeholder="Contoh: 2000000"
+                        value={itemCurrentAmount}
+                        onChange={(e) => setItemCurrentAmount(e.target.value)}
+                        className="w-full px-3 py-2 text-xs font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
+                      />
+                      {itemCurrentAmount && !isNaN(parseFloat(itemCurrentAmount)) && (
+                        <span className="text-[10px] text-emerald-600 font-mono font-bold mt-0.5 block truncate">
+                          {formatRupiah(parseFloat(itemCurrentAmount))}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Catatan Tambahan (Opsional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: Rencana pesan vendor dari Nabire..."
+                      value={itemNotes}
+                      onChange={(e) => setItemNotes(e.target.value)}
+                      className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddingItemToGoal(null);
+                        setEditingSubItem(null);
+                      }}
+                      className="px-4 py-2 text-xs font-semibold text-slate-500"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl shadow-xs"
+                    >
+                      {editingSubItem ? 'Perbarui Item' : 'Simpan Item'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Setor Khusus Sub-Item */}
+          {topUpSubItem && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm p-5 space-y-3.5 shadow-2xl animate-fade-in">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                  <div className="min-w-0">
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                      Tambah Setoran: {topUpSubItem.item.title}
+                    </h4>
+                    <p className="text-[10px] text-slate-400 truncate">
+                      Folder: {topUpSubItem.goal.title}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setTopUpSubItem(null)}
+                    className="p-1 text-slate-400 hover:text-slate-600 rounded-lg shrink-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleQuickTopUpSubItem} className="space-y-3">
+                  <div>
+                    <div className="flex justify-between text-[11px] mb-1">
+                      <span className="text-slate-500">Saldo saat ini:</span>
+                      <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                        {formatRupiah(topUpSubItem.item.currentAmount)} / {formatRupiah(topUpSubItem.item.targetAmount)}
+                      </span>
+                    </div>
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Nominal Setoran (Rp)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      required
+                      placeholder="Contoh: 500000"
+                      value={topUpAmount}
+                      onChange={(e) => setTopUpAmount(e.target.value)}
+                      className="w-full px-3 py-2 text-sm font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
+                      autoFocus
+                    />
+                    {topUpAmount && !isNaN(parseFloat(topUpAmount)) && (
+                      <div className="mt-1 flex items-center justify-between text-[11px] font-mono font-bold">
+                        <span className="text-emerald-600">+ {formatRupiah(parseFloat(topUpAmount))}</span>
+                        <span className="text-slate-600 dark:text-slate-300">
+                          Menjadi: {formatRupiah(topUpSubItem.item.currentAmount + parseFloat(topUpAmount))}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setTopUpSubItem(null)}
+                      className="flex-1 py-2 text-xs font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl shadow-xs"
+                    >
+                      Simpan Setoran
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1681,9 +2430,7 @@ export function SimpleFinanceView({
               );
               const estVal = assetsToAnalyze.reduce((s, a) => {
                 const w = Number(a.weightGrams) || 0;
-                const p = Number(a.currentEstPricePerGram) || (
-                  a.type === 'antam' ? 1510000 : a.type === 'galeri24' ? 1495000 : 1485000
-                );
+                const p = getAssetBuybackPrice(a);
                 return s + (w * p);
               }, 0);
 
@@ -1812,6 +2559,201 @@ export function SimpleFinanceView({
                 </div>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* Quick Buyback Price Editor for Single Asset */}
+      {editingBuybackAsset && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded-3xl p-5 max-w-sm w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center">
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900 dark:text-white">
+                    Ubah Harga Buyback
+                  </h3>
+                  <p className="text-[10px] text-slate-400 truncate max-w-[200px]">
+                    {editingBuybackAsset.title}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingBuybackAsset(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickSaveBuybackPrice} className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Harga Buyback per Gram (Rp)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  required
+                  placeholder="Contoh: 1390000"
+                  value={quickBuybackPriceInput}
+                  onChange={(e) => setQuickBuybackPriceInput(e.target.value)}
+                  className="w-full px-3 py-2 text-sm font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
+                  autoFocus
+                />
+                {quickBuybackPriceInput && !isNaN(parseFloat(quickBuybackPriceInput)) && (
+                  <div className="mt-1 flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500">Nilai Jual ({editingBuybackAsset.weightGrams}g):</span>
+                    <span className="font-mono font-bold text-amber-600 dark:text-amber-400">
+                      {formatRupiah(parseFloat(quickBuybackPriceInput) * editingBuybackAsset.weightGrams)}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Quick Preset Buttons */}
+              <div className="space-y-1">
+                <span className="text-[10px] text-slate-400 block font-medium">Pilihan Cepat Acuan Pasar:</span>
+                <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => setQuickBuybackPriceInput(String(customBenchmarks.antam || 1395000))}
+                    className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-left font-mono truncate"
+                  >
+                    Antam: {formatRupiah(customBenchmarks.antam || 1395000)}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickBuybackPriceInput(String(customBenchmarks.galeri24 || 1385000))}
+                    className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-left font-mono truncate"
+                  >
+                    Galeri24: {formatRupiah(customBenchmarks.galeri24 || 1385000)}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingBuybackAsset(null)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-500"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl shadow-xs"
+                >
+                  Simpan Harga
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Benchmark Market Rates Settings Modal */}
+      {isBenchmarkModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded-3xl p-5 max-w-sm w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center">
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900 dark:text-white">
+                    Edit Acuan Buyback Pasar
+                  </h3>
+                  <p className="text-[10px] text-slate-400">
+                    Perbarui harga acuan buyback harian (Rp / gram)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBenchmarkModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5 text-xs">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Antam LM CertiCard (Rp / gram)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={benchmarkForm.antam}
+                  onChange={(e) => setBenchmarkForm({ ...benchmarkForm, antam: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Galeri 24 Pegadaian (Rp / gram)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={benchmarkForm.galeri24}
+                  onChange={(e) => setBenchmarkForm({ ...benchmarkForm, galeri24: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  UBS Gold (Rp / gram)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={benchmarkForm.ubs}
+                  onChange={(e) => setBenchmarkForm({ ...benchmarkForm, ubs: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Tabungan Emas Pegadaian (Rp / gram)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={benchmarkForm.pegadaian}
+                  onChange={(e) => setBenchmarkForm({ ...benchmarkForm, pegadaian: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => handleSaveBenchmarks(true)}
+                className="w-full py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl shadow-xs"
+              >
+                Simpan & Terapkan ke Semua Aset
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSaveBenchmarks(false)}
+                className="w-full py-1.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
+              >
+                Simpan Hanya Sebagai Acuan
+              </button>
+            </div>
           </div>
         </div>
       )}
