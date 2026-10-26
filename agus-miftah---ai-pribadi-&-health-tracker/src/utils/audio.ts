@@ -122,38 +122,82 @@ class SoundFX {
   private adhanAudio: HTMLAudioElement | null = null;
   private isAdhanPlayingState = false;
 
-  // Plays authentic adhan MP3 with fallback to melodic call synthesizer
-  playAdhan(onEnd?: () => void) {
+  // Plays custom uploaded audio or authentic human voice adhan MP3
+  playAdhan(customAudioUrl?: string | null, onEnd?: () => void) {
     if (typeof window === 'undefined') return;
 
     this.stopAdhan();
     this.isAdhanPlayingState = true;
 
-    try {
-      // High quality adhan MP3 from reliable Islamic CDN
-      const audio = new Audio('https://cdn.islamic.network/audio/adhan/ar.alafasy.mp3');
-      this.adhanAudio = audio;
-      audio.volume = 0.9;
+    // 1. If user uploaded a custom Adhan audio file from their phone/laptop
+    if (customAudioUrl && customAudioUrl.trim()) {
+      try {
+        const audio = new Audio(customAudioUrl);
+        this.adhanAudio = audio;
+        audio.volume = 1.0;
 
-      audio.onended = () => {
-        this.isAdhanPlayingState = false;
-        if (onEnd) onEnd();
-      };
+        audio.onended = () => {
+          this.isAdhanPlayingState = false;
+          if (onEnd) onEnd();
+        };
 
-      audio.onerror = () => {
-        // Fallback to offline web audio synthesized adhan
-        this.playSynthesizedAdhanSequence(onEnd);
-      };
-
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(() => {
+        audio.onerror = () => {
           this.playSynthesizedAdhanSequence(onEnd);
-        });
+        };
+
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            this.playSynthesizedAdhanSequence(onEnd);
+          });
+        }
+        return;
+      } catch {
+        this.playSynthesizedAdhanSequence(onEnd);
+        return;
       }
-    } catch {
-      this.playSynthesizedAdhanSequence(onEnd);
     }
+
+    // 2. High quality real human adhan audio sources with fallback
+    const sources = [
+      'https://cdn.aladhan.com/audio/adhans/makkah.mp3',
+      'https://cdn.islamic.network/audio/adhan/ar.alafasy.mp3',
+      'https://media.sd.ma/assabile/adhan_3742387/f8a65ba48259.mp3'
+    ];
+
+    let currentSourceIdx = 0;
+    const tryPlaySource = () => {
+      if (currentSourceIdx >= sources.length) {
+        this.playSynthesizedAdhanSequence(onEnd);
+        return;
+      }
+      const src = sources[currentSourceIdx++];
+      try {
+        const audio = new Audio(src);
+        this.adhanAudio = audio;
+        audio.volume = 0.95;
+
+        audio.onended = () => {
+          this.isAdhanPlayingState = false;
+          if (onEnd) onEnd();
+        };
+
+        audio.onerror = () => {
+          tryPlaySource();
+        };
+
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            tryPlaySource();
+          });
+        }
+      } catch {
+        tryPlaySource();
+      }
+    };
+
+    tryPlaySource();
   }
 
   stopAdhan() {
