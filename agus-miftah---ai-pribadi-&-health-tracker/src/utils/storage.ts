@@ -472,6 +472,23 @@ export function getInitialDefaultState(): AppState {
 
     const defaultFinancialTargets: FinancialGoal[] = [
       {
+        id: 'goal-nikah',
+        title: 'Target Menikah',
+        targetAmount: 35000000,
+        currentAmount: 14500000,
+        targetDate: `${new Date().getFullYear() + 1}-08-17`,
+        category: 'Menikah',
+        wallet: 'BCA',
+        notes: 'Tabungan persiapan pernikahan berkah.',
+        createdAt: Date.now() - 20000000,
+        items: [
+          { id: 'it-1', title: 'Mahar & Mas Kawin', targetAmount: 10000000, currentAmount: 6000000, isCompleted: false },
+          { id: 'it-2', title: 'Sewa Gedung & Acara', targetAmount: 12000000, currentAmount: 5000000, isCompleted: false },
+          { id: 'it-3', title: 'Catering & Konsumsi', targetAmount: 8000000, currentAmount: 2500000, isCompleted: false },
+          { id: 'it-4', title: 'Baju Pengantin & Rias', targetAmount: 5000000, currentAmount: 1000000, isCompleted: false }
+        ]
+      },
+      {
         id: 'goal-1',
         title: 'Dana Darurat (3-6 Bulan)',
         targetAmount: 15000000,
@@ -726,7 +743,15 @@ export function getInitialDefaultState(): AppState {
       reminders: Array.isArray(parsed.reminders) ? parsed.reminders : defaultState.reminders,
       healthChecks: Array.isArray(parsed.healthChecks) ? parsed.healthChecks : defaultState.healthChecks,
       transactions: Array.isArray(parsed.transactions) ? parsed.transactions : defaultState.transactions,
-      financialTargets: Array.isArray(parsed.financialTargets) ? parsed.financialTargets : (defaultState.financialTargets || []),
+      financialTargets: (Array.isArray(parsed.financialTargets) && parsed.financialTargets.length > 0 ? parsed.financialTargets : (defaultState.financialTargets || [])).map((g: any) => ({
+        ...g,
+        items: Array.isArray(g.items) ? g.items.map((it: any) => ({
+          ...it,
+          targetAmount: Number(it.targetAmount) || 0,
+          currentAmount: Number(it.currentAmount) || 0,
+          isCompleted: Boolean(it.isCompleted)
+        })) : []
+      })),
       goldAssets: Array.isArray(parsed.goldAssets) && parsed.goldAssets.length > 0 ? parsed.goldAssets : (defaultState.goldAssets || []),
       chatMessages: Array.isArray(parsed.chatMessages) ? parsed.chatMessages : defaultState.chatMessages,
       settings: {
