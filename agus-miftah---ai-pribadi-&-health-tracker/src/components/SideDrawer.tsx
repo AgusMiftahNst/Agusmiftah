@@ -49,6 +49,9 @@ interface SideDrawerProps {
   remindersCount?: number;
   adhanSoundEnabled?: boolean;
   onToggleAdhanSound?: () => void;
+  cityName?: string;
+  useManualPrayerTimes?: boolean;
+  onOpenPrayerSettings: () => void;
 }
 
 export function SideDrawer({
@@ -72,7 +75,10 @@ export function SideDrawer({
   pendingActivitiesCount = 0,
   remindersCount = 0,
   adhanSoundEnabled = true,
-  onToggleAdhanSound
+  onToggleAdhanSound,
+  cityName = 'Nabire',
+  useManualPrayerTimes = false,
+  onOpenPrayerSettings
 }: SideDrawerProps) {
   const drawerRef = useRef<HTMLDivElement>(null);
   const touchStartXRef = useRef<number>(0);
@@ -239,6 +245,34 @@ export function SideDrawer({
                 <ChevronRight className="w-4 h-4 text-slate-400" />
               </button>
             </div>
+          </div>
+
+          {/* Sholat 5 Waktu & Suara Azan (Nabire) */}
+          <div className="p-3 border-b border-slate-100 dark:border-slate-800">
+            <p className="px-2 pb-1.5 text-[10px] font-bold tracking-wider text-slate-400 uppercase font-mono">
+              Ibadah & Sholat ({cityName})
+            </p>
+
+            <button
+              onClick={() => {
+                onClose();
+                onOpenPrayerSettings();
+              }}
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50/70 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-950/70 border border-emerald-200/80 dark:border-emerald-800/80 transition-all text-left"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-1.5 rounded-lg bg-emerald-600 text-white shadow-2xs">
+                  <Moon className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="font-bold">Edit Jam Sholat & Suara Azan</p>
+                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-normal">
+                    {useManualPrayerTimes ? 'Mode Jam Manual Aktif' : 'Otomatis Nabire'} · Tes & Upload
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-emerald-500" />
+            </button>
           </div>
 
           {/* Keamanan & Akun */}
@@ -427,34 +461,6 @@ export function SideDrawer({
                   />
                 </button>
               </div>
-
-              {/* Suara Azan Otomatis */}
-              {onToggleAdhanSound && (
-                <div className="flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200">
-                  <div className="flex items-center gap-3">
-                    <div className="p-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
-                      <span className="text-xs">🕌</span>
-                    </div>
-                    <div>
-                      <p>Suara Azan 5 Waktu</p>
-                      <p className="text-[10px] text-slate-400 font-normal">Bunyikan saat masuk waktu</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={onToggleAdhanSound}
-                    className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
-                      adhanSoundEnabled ? 'bg-emerald-600' : 'bg-slate-300'
-                    }`}
-                    aria-label="Toggle Suara Azan"
-                  >
-                    <div
-                      className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-                        adhanSoundEnabled ? 'translate-x-5' : 'translate-x-0'
-                      }`}
-                    />
-                  </button>
-                </div>
-              )}
 
               {/* Notifikasi Deadline */}
               {onRequestNotifications && (
